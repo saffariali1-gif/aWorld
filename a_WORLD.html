@@ -1,0 +1,2716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>A_WORLD // Another World</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap');
+
+  :root{
+    --bg:#030507;
+    --near-black:#0a0d10;
+    --gray:#1a2226;
+    --white:#eaf5f2;
+    --cyan:#6fe3d4;
+    --green:#5bc98a;
+    --blue:#5a7fa3;
+    --dim:rgba(234,245,242,0.45);
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg); color:var(--white);
+    font-family:'JetBrains Mono', ui-monospace, 'Courier New', monospace;
+    overflow:hidden; overscroll-behavior:none;
+  }
+
+  canvas{ display:block; touch-action:none; }
+
+  #world{ position:fixed; inset:0; cursor:grab; }
+  #world.dragging{ cursor:grabbing; }
+  #world.hoverable{ cursor:pointer; }
+
+  /* ---------- boot sequence ---------- */
+  #boot{
+    position:fixed; inset:0; background:var(--bg);
+    z-index:50; display:flex; align-items:flex-end;
+    padding:6vh 6vw; transition:opacity .4s ease;
+  }
+  #boot pre{
+    margin:0; font-size:12px; line-height:1.8; letter-spacing:0.02em;
+    color:var(--green); white-space:pre-wrap; text-shadow:0 0 8px rgba(91,201,138,0.35);
+  }
+  #boot .cursor{ display:inline-block; width:7px; height:12px; background:var(--green); vertical-align:-2px; animation:blink 1s steps(1) infinite; }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  /* ---------- ambient hud ---------- */
+  #hud{
+    position:fixed; inset:0; pointer-events:none; z-index:20;
+    opacity:0; transition:opacity 1.6s ease;
+  }
+  #hud.visible{ opacity:1; }
+  #mark{
+    position:absolute; top:20px; left:22px; font-size:11px; letter-spacing:0.18em;
+    color:var(--dim);
+  }
+  #mark b{ color:var(--cyan); font-weight:500; }
+  #coords{
+    position:absolute; top:20px; right:22px; font-size:11px; letter-spacing:0.08em;
+    color:var(--dim); text-align:right;
+  }
+  #hint{
+    position:absolute; bottom:26px; left:50%; transform:translateX(-50%);
+    font-size:11px; letter-spacing:0.14em; color:var(--dim); text-align:center;
+    transition:opacity 1.4s ease; white-space:nowrap;
+  }
+
+  #rotateLeftBtn, #rotateRightBtn{
+    position:fixed; bottom:20px; z-index:25; pointer-events:auto;
+    background:transparent; border:1px solid rgba(111,227,212,0.25);
+    color:var(--dim); font-family:inherit; font-size:15px; line-height:1;
+    padding:8px 13px; cursor:pointer;
+    transition:border-color .3s ease, color .3s ease;
+  }
+  #rotateLeftBtn:hover, #rotateRightBtn:hover{ border-color:var(--cyan); color:var(--cyan); }
+  #rotateLeftBtn{ left:22px; }
+  #rotateRightBtn{ right:22px; }
+
+  /* ---------- POV / walk toggle ---------- */
+  #povToggleBtn{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:26; pointer-events:auto;
+    background:rgba(3,5,7,0.55); border:1px solid rgba(111,227,212,0.35);
+    color:var(--dim); font-family:inherit; font-size:11px; letter-spacing:0.14em;
+    padding:10px 18px; cursor:pointer; white-space:nowrap;
+    transition:border-color .3s ease, color .3s ease, background .3s ease;
+  }
+  #povToggleBtn:hover{ border-color:var(--cyan); color:var(--cyan); }
+  #povToggleBtn.active{ color:var(--bg); background:var(--cyan); border-color:var(--cyan); }
+
+  body.pov-active #rotateLeftBtn,
+  body.pov-active #rotateRightBtn{ display:none; }
+
+  /* ---------- screenshot button, shown only in POV mode ---------- */
+  #screenshotBtn{
+    position:fixed; top:18px; right:18px; z-index:26; pointer-events:none;
+    width:42px; height:42px; border-radius:50%;
+    background:rgba(3,5,7,0.55); border:1px solid rgba(111,227,212,0.35);
+    color:var(--dim);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; opacity:0; transform:scale(0.85);
+    transition:opacity .3s ease, transform .3s ease, border-color .2s ease, color .2s ease;
+  }
+  body.pov-active #screenshotBtn{ opacity:1; transform:scale(1); pointer-events:auto; }
+  #screenshotBtn:hover{ border-color:var(--cyan); color:var(--cyan); }
+  #screenshotBtn:active{ transform:scale(0.9); }
+
+  #captureFlash{
+    position:fixed; inset:0; z-index:60; pointer-events:none;
+    background:#eaf5f2; opacity:0; transition:opacity 60ms ease-out;
+  }
+  #captureFlash.flash{ opacity:0.85; transition:none; }
+
+  #captureToast{
+    position:fixed; top:68px; right:18px; z-index:26; pointer-events:none;
+    background:rgba(3,5,7,0.7); border:1px solid rgba(111,227,212,0.35);
+    color:var(--cyan); font-family:inherit; font-size:10px; letter-spacing:0.12em;
+    padding:6px 10px; opacity:0; transform:translateY(-4px);
+    transition:opacity .25s ease, transform .25s ease;
+  }
+  #captureToast.show{ opacity:1; transform:translateY(0); }
+
+  /* ---------- crosshair, shown only in POV mode ---------- */
+  #crosshair{
+    position:fixed; top:50%; left:50%; width:6px; height:6px; margin:-3px 0 0 -3px;
+    border-radius:50%; border:1px solid rgba(234,245,242,0.55);
+    z-index:22; pointer-events:none; opacity:0; transition:opacity .3s ease, background .15s ease, transform .15s ease;
+  }
+  body.pov-active #crosshair{ opacity:0.85; }
+  #crosshair.targeting{ background:var(--cyan); border-color:var(--cyan); transform:scale(1.8); }
+
+  /* ---------- movement thumbstick (touch + mouse) ---------- */
+  #joystick{
+    position:fixed; left:26px; bottom:90px; width:104px; height:104px; z-index:26;
+    display:none; pointer-events:auto; touch-action:none;
+  }
+  body.pov-active #joystick{ display:block; }
+  #joystickBase{
+    position:absolute; inset:0; border-radius:50%;
+    border:1px solid rgba(111,227,212,0.3); background:rgba(3,5,7,0.35);
+  }
+  #joystickThumb{
+    position:absolute; top:50%; left:50%; width:44px; height:44px; margin:-22px 0 0 -22px;
+    border-radius:50%; background:rgba(111,227,212,0.28); border:1px solid rgba(111,227,212,0.6);
+    transition:transform .05s linear;
+  }
+
+  /* ---------- gallery panel : grows from the point that was clicked ---------- */
+  #panelLayer{ position:fixed; inset:0; z-index:40; pointer-events:none; }
+  #panel{
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    clip-path:circle(0% at 50% 50%);
+    -webkit-clip-path:circle(0% at 50% 50%);
+    transition:clip-path .95s cubic-bezier(.65,0,.24,1), -webkit-clip-path .95s cubic-bezier(.65,0,.24,1);
+    background:
+      linear-gradient(180deg, rgba(3,5,7,0.94), rgba(3,5,7,0.985) 40%),
+      var(--bg);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #panel.open{ pointer-events:auto; }
+  #panelInner{
+    width:min(560px, 86vw); max-height:78vh; overflow-y:auto;
+    border:1px solid rgba(111,227,212,0.22);
+    padding:34px 32px 30px;
+    background:linear-gradient(180deg, rgba(10,13,16,0.5), rgba(10,13,16,0.2));
+    box-shadow:0 0 60px rgba(111,227,212,0.05), inset 0 0 40px rgba(111,227,212,0.03);
+    opacity:0; transform:translateY(10px);
+    transition:opacity .5s ease .25s, transform .5s ease .25s;
+  }
+  #panel.open #panelInner{ opacity:1; transform:translateY(0); }
+  #panelEyebrow{ font-size:10px; letter-spacing:0.24em; color:var(--cyan); margin-bottom:14px; }
+  #panelTitle{ font-size:26px; font-weight:500; letter-spacing:0.01em; margin:0 0 10px; color:var(--white); min-height:1.3em; }
+  #panelTagline{ font-size:13px; color:var(--green); margin:0 0 22px; letter-spacing:0.02em; min-height:1.2em; }
+  #panelBody{ font-size:13px; line-height:1.85; color:var(--dim); margin:0 0 24px; opacity:0; transition:opacity .6s ease; }
+  #panelBody.show{ opacity:1; }
+  #panelBody:empty{ display:none; }
+
+  /* ---------- flip-through gallery ---------- */
+  #panelGallery{ display:none; margin:0 0 22px; }
+  #panelGallery.show{ display:block; }
+  #galleryFrame{
+    position:relative; width:100%; aspect-ratio:16/10; overflow:hidden;
+    border:1px solid rgba(111,227,212,0.22); background:#050709;
+    cursor:zoom-in;
+  }
+  #galleryImg{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
+    will-change:transform, opacity; z-index:1;
+  }
+  #galleryExpand{
+    position:absolute; top:8px; right:8px; z-index:3;
+    background:rgba(3,5,7,0.55); border:1px solid rgba(111,227,212,0.3);
+    color:var(--cyan); width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:background .2s ease, border-color .2s ease;
+  }
+  #galleryExpand:hover{ background:rgba(111,227,212,0.15); border-color:var(--cyan); }
+  .galleryNav{
+    position:absolute; top:50%; transform:translateY(-50%);
+    background:rgba(3,5,7,0.55); border:1px solid rgba(111,227,212,0.3);
+    color:var(--cyan); width:30px; height:30px; font-family:inherit; font-size:14px;
+    cursor:pointer; line-height:1; z-index:3;
+  }
+  .galleryNav:hover{ background:rgba(111,227,212,0.15); }
+  #galleryPrev{ left:8px; } #galleryNext{ right:8px; }
+  #galleryDots{ display:flex; gap:6px; justify-content:center; margin-top:10px; flex-wrap:wrap; }
+  #galleryDots span{
+    width:6px; height:6px; border-radius:50%; background:rgba(234,245,242,0.2);
+    cursor:pointer; transition:background .25s ease;
+  }
+  #galleryDots span.active{ background:var(--cyan); }
+
+  /* ---------- fullscreen lightbox ---------- */
+  #lightbox{
+    position:fixed; inset:0; z-index:80; background:rgba(3,5,7,0.97);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .3s ease;
+  }
+  #lightbox.open{ opacity:1; pointer-events:auto; }
+  #lightboxImg{
+    max-width:92vw; max-height:88vh; object-fit:contain;
+    box-shadow:0 0 60px rgba(0,0,0,0.6);
+    opacity:0; transform:scale(0.97); transition:opacity .25s ease, transform .25s ease;
+  }
+  #lightbox.open #lightboxImg{ opacity:1; transform:scale(1); }
+  #lightboxClose{
+    position:absolute; top:18px; right:18px; z-index:2;
+    background:rgba(3,5,7,0.55); border:1px solid rgba(111,227,212,0.3);
+    color:var(--dim); width:38px; height:38px; font-family:inherit; font-size:18px;
+    cursor:pointer; transition:border-color .2s ease, color .2s ease;
+  }
+  #lightboxClose:hover{ border-color:var(--cyan); color:var(--cyan); }
+  .lightboxNav{
+    position:absolute; top:50%; transform:translateY(-50%);
+    background:rgba(3,5,7,0.55); border:1px solid rgba(111,227,212,0.3);
+    color:var(--cyan); width:44px; height:44px; font-family:inherit; font-size:20px;
+    cursor:pointer; line-height:1; z-index:2;
+    transition:background .2s ease, border-color .2s ease;
+  }
+  .lightboxNav:hover{ background:rgba(111,227,212,0.15); border-color:var(--cyan); }
+  #lightboxPrev{ left:18px; } #lightboxNext{ right:18px; }
+  #lightboxCounter{
+    position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+    font-size:11px; letter-spacing:0.12em; color:var(--dim);
+  }
+
+  /* ---------- contact fields ---------- */
+  #panelFields{ display:none; margin:0 0 24px; }
+  #panelFields.show{ display:block; }
+  .fieldRow{ display:flex; gap:14px; padding:9px 0; border-bottom:1px solid rgba(111,227,212,0.12); font-size:12.5px; }
+  .fieldRow .fieldLabel{ color:var(--cyan); letter-spacing:0.12em; min-width:78px; flex-shrink:0; }
+  .fieldRow .fieldValue{ color:var(--dim); word-break:break-word; }
+  #panelTags{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:28px; }
+  #panelTags span{
+    font-size:10px; letter-spacing:0.1em; color:var(--blue);
+    border:1px solid rgba(90,127,163,0.4); padding:4px 9px;
+  }
+  #panelClose{
+    background:none; border:none; color:var(--dim); font-family:inherit;
+    font-size:11px; letter-spacing:0.14em; cursor:pointer; padding:0;
+    border-bottom:1px solid transparent;
+  }
+  #panelClose:hover{ color:var(--cyan); border-color:var(--cyan); }
+
+  ::-webkit-scrollbar{ width:6px; }
+  ::-webkit-scrollbar-thumb{ background:rgba(111,227,212,0.2); }
+</style>
+</head>
+<body>
+
+<div id="world"></div>
+
+<div id="hud">
+  <div id="mark">aliSaffari<b>:// </b> a World</div>
+  <div id="coords">SECTOR <span id="cx">0000</span>.<span id="cz">0000</span></div>
+  <div id="hint">DRAG OR USE ARROW KEYS TO EXPLORE &nbsp;·&nbsp; Q/E OR ⟲⟳ TO ROTATE THE VIEW &nbsp;·&nbsp; TAP A SIGN TO OPEN IT</div>
+</div>
+
+<button id="rotateLeftBtn" aria-label="Rotate view left">⟲</button>
+<button id="rotateRightBtn" aria-label="Rotate view right">⟳</button>
+<button id="povToggleBtn" aria-label="Toggle first-person walking mode">WALK / POV</button>
+<button id="screenshotBtn" aria-label="Take a screenshot">
+  <svg viewBox="0 0 24 24" width="19" height="19">
+    <path d="M3 9 V3 H9 M15 3 H21 V9 M21 15 V21 H15 M9 21 H3 V15"
+          fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="12" cy="12" r="1.7" fill="currentColor"/>
+  </svg>
+</button>
+<div id="captureFlash"></div>
+<div id="captureToast">SAVED</div>
+<div id="crosshair"></div>
+<div id="joystick">
+  <div id="joystickBase"></div>
+  <div id="joystickThumb"></div>
+</div>
+
+<div id="boot">
+  <pre id="bootLog"><span class="cursor"></span></pre>
+</div>
+
+<div id="panelLayer">
+  <div id="panel">
+    <div id="panelInner">
+      <div id="panelEyebrow">_OPEN</div>
+      <h2 id="panelTitle"></h2>
+      <p id="panelTagline"></p>
+
+      <div id="panelGallery">
+        <div id="galleryFrame">
+          <img id="galleryImg" alt="" draggable="false" />
+          <button id="galleryExpand" aria-label="View fullscreen" title="View fullscreen">
+            <svg viewBox="0 0 24 24" width="15" height="15">
+              <path d="M3 9 V3 H9 M15 3 H21 V9 M21 15 V21 H15 M9 21 H3 V15"
+                    fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        <button id="galleryPrev" class="galleryNav" aria-label="previous">&lt;</button>
+        <button id="galleryNext" class="galleryNav" aria-label="next">&gt;</button>
+        <div id="galleryDots"></div>
+      </div>
+
+      <p id="panelBody"></p>
+      <div id="panelFields"></div>
+      <div id="panelTags"></div>
+      <button id="panelClose">&lt; CLOSE_</button>
+    </div>
+  </div>
+</div>
+
+<div id="lightbox">
+  <img id="lightboxImg" alt="" draggable="false" />
+  <button id="lightboxClose" aria-label="Close fullscreen">&times;</button>
+  <button id="lightboxPrev" class="lightboxNav" aria-label="previous">&lt;</button>
+  <button id="lightboxNext" class="lightboxNav" aria-label="next">&gt;</button>
+  <div id="lightboxCounter"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* =========================================================================
+   CONTENT — edit this array to change what lives in the world.
+   Each entry becomes a glowing, clickable sign somewhere in the city.
+   ========================================================================= */
+const DISTRICTS = [
+  { id:'the CORE',    sign:'the CORE', title:'the CORE', tagline:'An optical study of light as image.',
+    body:'The Core investigates the optical mechanisms that make photography possible. Through the use of lenses, telescopes, and other optical devices, the series examines light not as a means of representation but as the primary subject of the image. By foregrounding optical phenomena such as refraction, reflection, magnification, and distortion, the work shifts attention from the photographed world to the physical processes through which photographs are produced.',
+    tags:['Optics','Light','Abstraction'], gallery:32 },
+  { id:'Same World, Another Camera',      sign:'Same World, Another Camera', title:'Same World, Another Camera', tagline:'The familiar city reinterpreted through infrared photography.',
+    body:'Same World, Another Camera explores urban spaces and anonymous portraits through a modified infrared camera. Recording wavelengths beyond human vision, the camera transforms familiar scenes into unfamiliar images. The project investigates how changes in photographic technology reshape the perception of the same world.',
+    tags:['Infrared','Perception'], gallery:32 },
+  { id:'Same Camera, Another World',          sign:'Same Camera, Another World', title:'Same Camera, Another World', tagline:'Urban landscapes shaped by distance, solitude, and the experience of being out of place.',
+    body:'Same Camera, Another World presents quiet urban landscapes shaped by absence and distance. Empty streets, overlooked spaces, and moments of isolation transform familiar environments into unfamiliar places. Rather than documenting the city, the series reflects on the emotional experience of moving through it.',
+    tags:['Urban Landscape','Solitude','Belonging'], gallery:10 },
+  { id:'Once Upon a TIME',  sign:'Once Upon a TIME', title:'Once Upon a TIME', tagline:'Archived images revisited through rephotography and reframing.',
+    body:'Once Upon a Time is based on archived slide photographs that have been rephotographed and reframed. By isolating fragments of existing images, the project shifts attention from the original photograph to the act of selection and reinterpretation. The resulting images exist between archive and authorship, where photography becomes a process of rediscovery rather than documentation.',
+    tags:['Archive','Rephotography'], gallery:16 },
+  { id:'Drivers',   sign:'Drivers', title:'Drivers', tagline:'Portraits encountered through a digital platform and reintroduced as photographs.',
+    body:'Drivers explores profile photographs of ride-hailing drivers as contemporary portraits. By rephotographing these digital images, the project shifts them from a functional interface into a photographic context, raising questions about identity, representation, and the role of images in everyday digital life.',
+    tags:['Identity','Portrait'], gallery:8 },
+  // this one isn't mixed in with the other districts — it's planted as a
+  // landmark at the far southern edge, the very bottom of the map.
+  { id:'transmit',     sign:'CONTACT_ME', title:'Contact', tagline:'Open a channel.', contact:true,
+    fields:[
+      { label:'NAME',   value:'— Ali Saffari —' },
+      { label:'EMAIL',  value:'— saffari.ali1@gmail.com —' },
+      { label:'SOCIAL', value:'— add a handle or link —' },
+      { label:'NOTE',   value:'Reach out any time — this signal is monitored.' },
+    ],
+    tags:['contact'] },
+];
+
+const ADS = ['SIGNAL_WEAK','v4.02 STABLE','RUN://EARTH 2.4.exe','NODE_4 ACTIVE','ENCRYPTION: OFF','THERE YOU ARE!'];
+
+/* =========================================================================
+   BASIC SETUP
+   ========================================================================= */
+const container = document.getElementById('world');
+const COLORS = { bg:0x030507, cyan:0x6fe3d4, green:0x5bc98a, blue:0x5a7fa3, white:0xeaf5f2, dark:0x0a0d10 };
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(COLORS.bg);
+scene.fog = new THREE.FogExp2(COLORS.bg, 0.013);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false, logarithmicDepthBuffer:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+function applyRendererSize(){
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+applyRendererSize();
+container.appendChild(renderer.domElement);
+renderer.domElement.style.position = "fixed";
+renderer.domElement.style.left = "0";
+renderer.domElement.style.top = "0";
+renderer.domElement.style.width = "100vw";
+renderer.domElement.style.height = "100vh";
+
+// isometric orthographic camera
+const FRUSTUM = 20;
+let aspect = window.innerWidth/window.innerHeight;
+const isoCamera = new THREE.OrthographicCamera(-FRUSTUM*aspect/2, FRUSTUM*aspect/2, FRUSTUM/2, -FRUSTUM/2, -1000, 2000);
+const ISO_OFFSET_BASE = new THREE.Vector3(24, 24, 24);
+const ISO_OFFSET = new THREE.Vector3();
+let camZoom = 0.2;
+let camZoomTarget = 0.2;
+const ZOOM_MIN = 0.18, ZOOM_MAX = 5.5;
+
+// first-person / POV camera — walks the streets at eye level. Kept as a
+// completely separate camera object so the isometric view is untouched;
+// toggling POV just swaps which one is active for rendering + raycasting.
+const povCamera = new THREE.PerspectiveCamera(72, aspect, 0.03, 260);
+const POV_EYE_HEIGHT = 0.46; // roughly a pedestrian's eye level at this world scale
+const POV_RADIUS = 0.11;     // collision radius used to keep the player out of buildings
+let povActive = false;
+let povYaw = 0, povPitch = 0;
+
+// the camera currently fed to the renderer / raycaster — starts isometric
+let camera = isoCamera;
+
+// horizontal orbit — lets the whole city be spun around so every side of
+// every building (and whatever sits behind you) can be seen
+const Y_AXIS = new THREE.Vector3(0,1,0);
+let camYaw = 0, camYawTarget = 0;
+function rotateView(dir){
+  if(povActive){ povYawTarget += dir * (Math.PI/2); return; }
+  camYawTarget += dir * (Math.PI/2);
+}
+
+const rig = new THREE.Object3D(); // the point the player controls; camera orbits above it
+scene.add(rig);
+
+function updateCamera(dt){
+  // ease the yaw toward its target — smooth quarter-turns instead of snapping
+  const yawEase = 1 - Math.pow(0.0008, dt || 0.016);
+  camYaw += (camYawTarget - camYaw) * yawEase;
+
+  ISO_OFFSET.copy(ISO_OFFSET_BASE).applyAxisAngle(Y_AXIS, camYaw);
+  isoCamera.position.copy(rig.position).add(ISO_OFFSET);
+  isoCamera.lookAt(rig.position.x, rig.position.y + 1.2, rig.position.z);
+  // ease toward the target zoom instead of snapping — frame-rate independent smoothing
+  const zoomEase = 1 - Math.pow(0.0025, dt || 0.016);
+  camZoom += (camZoomTarget - camZoom) * zoomEase;
+  isoCamera.zoom = camZoom;
+  isoCamera.updateProjectionMatrix();
+
+  // keep movement/pan axes screen-relative as the view spins
+  FORWARD.copy(FORWARD_BASE).applyAxisAngle(Y_AXIS, camYaw);
+  RIGHT.copy(RIGHT_BASE).applyAxisAngle(Y_AXIS, camYaw);
+}
+
+/* =========================================================================
+   POV / WALK MODE — first-person camera that walks the streets at eye
+   level, with mouse/touch drag to look around (game-style) and WASD, arrow
+   keys, or an on-screen thumbstick to move. Simple circle-vs-box collision
+   keeps the player from walking through building footprints.
+   ========================================================================= */
+let povYawTarget = 0, povPitchTarget = 0;
+const POV_PITCH_LIMIT = 1.35;
+const povForward = new THREE.Vector3();
+const povRight = new THREE.Vector3();
+const povLookDir = new THREE.Vector3();
+
+function updatePovDirs(){
+  povForward.set(Math.sin(povYaw), 0, Math.cos(povYaw));
+  povRight.set(-Math.cos(povYaw), 0, Math.sin(povYaw));
+}
+updatePovDirs();
+
+function resolvePovCollisions(){
+  for(const c of COLLIDERS){
+    const dx = rig.position.x - c.x, dz = rig.position.z - c.z;
+    const ax = Math.abs(dx), az = Math.abs(dz);
+    if(ax > c.hw + POV_RADIUS || az > c.hd + POV_RADIUS) continue; // no overlap, cheap early-out
+    // push out along whichever axis has the least penetration
+    const overlapX = c.hw + POV_RADIUS - ax;
+    const overlapZ = c.hd + POV_RADIUS - az;
+    if(overlapX < overlapZ){
+      rig.position.x += (dx < 0 ? -overlapX : overlapX);
+    } else {
+      rig.position.z += (dz < 0 ? -overlapZ : overlapZ);
+    }
+  }
+}
+
+let povWalkPhase = 0;      // advances only while actually moving — drives the head-bob
+let povSpeedCurrent = 0;   // eased current walking speed, for smooth accel/decel
+const BOB_AMP = 0.02, BOB_FREQ = 9.5;
+
+function updatePovCamera(dt){
+  const lookEase = 1 - Math.pow(0.0004, dt || 0.016);
+  povYaw += (povYawTarget - povYaw) * lookEase;
+  povPitch += (povPitchTarget - povPitch) * lookEase;
+  updatePovDirs();
+
+  const bobMul = Math.min(1, povSpeedCurrent / 2.6);
+  const bob = bobMul > 0.02 ? Math.sin(povWalkPhase) * BOB_AMP * bobMul : 0;
+  povCamera.position.set(rig.position.x, POV_EYE_HEIGHT + bob, rig.position.z);
+  povLookDir.set(
+    Math.sin(povYaw) * Math.cos(povPitch),
+    Math.sin(povPitch),
+    Math.cos(povYaw) * Math.cos(povPitch)
+  );
+  povCamera.lookAt(
+    povCamera.position.x + povLookDir.x,
+    povCamera.position.y + povLookDir.y,
+    povCamera.position.z + povLookDir.z
+  );
+}
+
+function enterPov(){
+  if(povActive) return;
+  // face the same general direction the isometric camera was looking, so
+  // the switch doesn't feel like a random teleport
+  povYaw = povYawTarget = Math.atan2(-ISO_OFFSET.x, -ISO_OFFSET.z);
+  povPitch = povPitchTarget = -0.04;
+  povSpeedCurrent = 0; povWalkPhase = 0;
+  updatePovDirs();
+  resolvePovCollisions();
+  povActive = true;
+  camera = povCamera;
+  document.body.classList.add('pov-active');
+  hint.textContent = 'DRAG TO LOOK AROUND \u00b7 WASD OR THE STICK TO WALK \u00b7 LOOK AT A SIGN AND TAP TO OPEN';
+  hint.style.opacity = '1';
+  clearTimeout(hintFadeTimer);
+  hintFadeTimer = setTimeout(()=>{ hint.style.opacity = '0'; }, 4500);
+  povToggleBtn.classList.add('active');
+  povToggleBtn.textContent = 'MAP VIEW';
+}
+
+function exitPov(){
+  if(!povActive) return;
+  povActive = false;
+  camera = isoCamera;
+  document.body.classList.remove('pov-active');
+  joystickActive = false;
+  joystickThumb.style.transform = 'translate(-50%,-50%)';
+  hint.textContent = 'DRAG OR USE ARROW KEYS TO EXPLORE · Q/E OR ⟲⟳ TO ROTATE THE VIEW · TAP A GLOWING SIGN TO OPEN IT';
+  hint.style.opacity = '1';
+  clearTimeout(hintFadeTimer);
+  hintFadeTimer = setTimeout(()=>{ hint.style.opacity = '0'; }, 4000);
+  povToggleBtn.classList.remove('active');
+  povToggleBtn.textContent = 'WALK / POV';
+}
+
+function togglePov(){ povActive ? exitPov() : enterPov(); }
+
+// isometric-relative movement axes — rotated live to match camYaw (see updateCamera)
+const FORWARD_BASE = new THREE.Vector3(-1,0,-1).normalize();
+const RIGHT_BASE   = new THREE.Vector3(1,0,-1).normalize();
+const FORWARD = FORWARD_BASE.clone();
+const RIGHT   = RIGHT_BASE.clone();
+
+/* =========================================================================
+   PROCEDURAL TEXTURES — everything below is generated on the fly, nothing
+   is loaded from disk, which keeps the world feeling code-native.
+   ========================================================================= */
+const GLYPHS = '01#$%&*+=-/\\<>[]{}~^:;'.split('');
+const CODE_TOKENS = ['func','if','else','for','while','const','let','return','0x1F','0xFF','true','false','null','import','class','async','await','try','catch','=>','!==','&&','||','...','void','new','this'];
+
+function codeChar(){
+  // mostly single glyphs, occasionally a short recognizable code token —
+  // reads as real streaming code rather than random noise
+  return Math.random() < 0.12 ? CODE_TOKENS[(Math.random()*CODE_TOKENS.length)|0] : GLYPHS[(Math.random()*GLYPHS.length)|0];
+}
+
+function makeWindowTexture(tint, w=384, h=768, density=0.22){
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  // flat, near-black facade base — PS1-era buildings used one or two flat
+  // shaded panel colors rather than gradients, so the base stays solid
+  ctx.fillStyle = '#0a0e11'; ctx.fillRect(0,0,w,h);
+
+  // coarse, blocky panel noise — a cheap low-res "concrete/cladding" texture
+  // in the chunky, undithered style of PS1-era building facades. Kept subtle
+  // so the facade itself stays dark and the lit windows are what pop.
+  const noiseCell = 8;
+  for(let ny=0; ny<h; ny+=noiseCell){
+    for(let nx=0; nx<w; nx+=noiseCell){
+      if(Math.random() < 0.35){
+        const s = 2 + ((Math.random()*5)|0);
+        ctx.fillStyle = `rgba(${14+s},${19+s},${22+s},0.4)`;
+        ctx.fillRect(nx, ny, noiseCell, noiseCell);
+      }
+    }
+  }
+
+  // window grid — most bays are dark/off; only a modest fraction glow, like
+  // a real building at night rather than a fully lit-up billboard
+  const floorH = 44, bayW = 34;
+  const floors = Math.floor(h/floorH), bays = Math.floor(w/bayW);
+
+  for(let f=0; f<floors; f++){
+    const y = f*floorH;
+    for(let b=0; b<bays; b++){
+      const x = b*bayW;
+      const lit = Math.random() < density;
+      const pad = 3, ww = bayW-pad*2, wh = floorH-pad*2;
+
+      // window frame / mullion, always dark
+      ctx.fillStyle = '#04070a';
+      ctx.fillRect(x+pad-1, y+pad-1, ww+2, wh+2);
+
+      if(lit){
+        ctx.fillStyle = tint.replace('ALPHA', (0.32+Math.random()*0.28).toFixed(2));
+        ctx.fillRect(x+pad, y+pad, ww, wh);
+        // simple cross mullion splitting the pane, blocky PS1-style detail
+        ctx.fillStyle = 'rgba(3,5,6,0.65)';
+        ctx.fillRect(x+pad+ww/2-1, y+pad, 2, wh);
+      } else {
+        ctx.fillStyle = 'rgba(8,11,14,0.92)';
+        ctx.fillRect(x+pad, y+pad, ww, wh);
+        ctx.strokeStyle = 'rgba(110,140,140,0.06)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x+pad+0.5, y+pad+0.5, ww-1, wh-1);
+      }
+    }
+  }
+
+  // crown / parapet cap and a soft shadow along the base
+  ctx.fillStyle = 'rgba(4,7,9,0.92)';
+  ctx.fillRect(0,0,w,9);
+  ctx.strokeStyle = tint.replace('ALPHA','0.35');
+  ctx.beginPath(); ctx.moveTo(0,9.5); ctx.lineTo(w,9.5); ctx.stroke();
+  const gshadow = ctx.createLinearGradient(0,h-42,0,h);
+  gshadow.addColorStop(0,'rgba(0,0,0,0)');
+  gshadow.addColorStop(1,'rgba(0,0,0,0.6)');
+  ctx.fillStyle = gshadow; ctx.fillRect(0,h-42,w,42);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  // repeat is intentionally left at (1,1): each building bakes its own
+  // UVs (see mergeBuildingFaces) sized to its real width/height/depth, so
+  // the window pattern tiles at a constant, undistorted texel density
+  // instead of being stretched to fit whatever box it happens to be
+  // applied to. NearestFilter on magnification keeps every window edge
+  // crisp and blocky up close (low-res PS1 texture look) instead of the
+  // smeared, photo-like blur that bilinear filtering produces; mipmapped
+  // minification still keeps things clean and shimmer-free at a distance.
+  tex.magFilter = THREE.NearestFilter;
+  tex.anisotropy = 8;
+  return tex;
+
+}
+
+function makeGroundTexture(){
+  const w=512,h=512;
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#080b0d'; ctx.fillRect(0,0,w,h);
+  const cell = 32;
+  ctx.strokeStyle = 'rgba(111,227,212,0.16)';
+  ctx.lineWidth = 1;
+  for(let x=0;x<=w;x+=cell){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+  for(let y=0;y<=h;y+=cell){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+  // scattered stray characters, like debug print-outs on the pavement
+  ctx.font = '11px monospace';
+  for(let i=0;i<160;i++){
+    ctx.fillStyle = `rgba(91,201,138,${(0.08+Math.random()*0.18).toFixed(2)})`;
+    ctx.fillText(GLYPHS[(Math.random()*GLYPHS.length)|0], Math.random()*w, Math.random()*h);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(14,14);
+  return tex;
+}
+
+function makeGlyphTexture(char, color){
+  const c = document.createElement('canvas'); c.width=64; c.height=64;
+  const ctx = c.getContext('2d');
+  ctx.font = '46px "JetBrains Mono", monospace';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.shadowColor = color; ctx.shadowBlur = 14;
+  ctx.fillStyle = color;
+  ctx.fillText(char, 32, 34);
+  return new THREE.CanvasTexture(c);
+}
+
+function makeTextTexture(text, opts={}){
+  const { fg='#6fe3d4', size=46, pad=18, weight=500 } = opts;
+  const measure = document.createElement('canvas').getContext('2d');
+  measure.font = `${weight} ${size}px "JetBrains Mono", monospace`;
+  const tw = Math.ceil(measure.measureText(text).width);
+  const c = document.createElement('canvas');
+  c.width = tw + pad*2; c.height = size + pad*2;
+  const ctx = c.getContext('2d');
+  ctx.font = `${weight} ${size}px "JetBrains Mono", monospace`;
+  ctx.textBaseline='middle';
+  ctx.shadowColor = fg; ctx.shadowBlur = 18;
+  ctx.fillStyle = fg;
+  ctx.fillText(text, pad, c.height/2);
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return { texture:tex, aspect:c.width/c.height };
+}
+
+function makeGlowTexture(){
+  const c = document.createElement('canvas'); c.width=c.height=128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64,64,0,64,64,64);
+  g.addColorStop(0,'rgba(111,227,212,0.9)');
+  g.addColorStop(0.4,'rgba(111,227,212,0.25)');
+  g.addColorStop(1,'rgba(111,227,212,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(c);
+}
+
+const buildingTexVariants = [
+  makeWindowTexture('rgba(111,227,212,ALPHA)'),
+  makeWindowTexture('rgba(91,201,138,ALPHA)'),
+  makeWindowTexture('rgba(90,127,163,ALPHA)'),
+  makeWindowTexture('rgba(234,245,242,ALPHA)', 160,320,0.16),
+];
+const buildingTexScrollSpeeds = [0,0,0,0]; // scrolling removed — facades stay static
+const groundTex = makeGroundTexture();
+const glowTex = makeGlowTexture();
+
+/* gallery placeholder frames — procedurally drawn so the gallery matches the
+   world's visual language until real project images are dropped in later. */
+function makeGalleryImage(index, tint, label){
+  const w=480, h=300;
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createLinearGradient(0,0,w,h);
+  grad.addColorStop(0,'#131b20'); grad.addColorStop(1,'#050709');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,w,h);
+
+  ctx.strokeStyle = 'rgba(111,227,212,0.09)';
+  for(let x=0;x<w;x+=24){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+  for(let y=0;y<h;y+=24){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+
+  ctx.font = '12px monospace';
+  for(let i=0;i<200;i++){
+    ctx.fillStyle = tint.replace('ALPHA', (0.08+Math.random()*0.26).toFixed(2));
+    ctx.fillText(GLYPHS[(Math.random()*GLYPHS.length)|0], Math.random()*w, Math.random()*h);
+  }
+
+  ctx.strokeStyle = tint.replace('ALPHA','0.55');
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  const cx = w*(0.28 + 0.44*(((index*53)%97)/97));
+  ctx.arc(cx, h*0.5, 46+((index*29)%54), 0, Math.PI*2);
+  ctx.stroke();
+
+  ctx.font = '600 15px "JetBrains Mono", monospace';
+  ctx.fillStyle = tint.replace('ALPHA','0.95');
+  ctx.shadowColor = tint.replace('ALPHA','1'); ctx.shadowBlur = 10;
+  ctx.fillText(`${label} · FRAME_${String(index+1).padStart(2,'0')}`, 16, h-16);
+
+  return c.toDataURL();
+}
+
+/* real project photos live in:  images/<district id>/1.jpg, 2.jpg, 3.jpg ...
+   the number of files expected for each district is whatever you wrote in
+   that district's "gallery:N" field above — e.g. gallery:32 means the code
+   will look for images/creative/1.jpg through images/creative/32.jpg
+   supported extensions: .jpg .jpeg .png .webp (first one found per index wins) */
+const GALLERY_TINTS = ['rgba(111,227,212,ALPHA)','rgba(91,201,138,ALPHA)','rgba(90,127,163,ALPHA)','rgba(234,245,242,ALPHA)'];
+const GALLERY_EXTENSIONS = ['jpg','jpeg','png','webp'];
+
+function findRealImage(id, index){
+  // returns a Promise that resolves to a working image URL, or null if none of the extensions exist
+  return new Promise(resolve=>{
+    let i = 0;
+    function tryNext(){
+      if(i >= GALLERY_EXTENSIONS.length){ resolve(null); return; }
+      const url = `images/${id}/${index+1}.${GALLERY_EXTENSIONS[i]}`;
+      const img = new Image();
+      img.onload = ()=> resolve(url);
+      img.onerror = ()=>{ i++; tryNext(); };
+      img.src = url;
+    }
+    tryNext();
+  });
+}
+
+DISTRICTS.forEach((d,i)=>{
+  if(!d.gallery) return;
+  const tint = GALLERY_TINTS[i % GALLERY_TINTS.length];
+  // start with placeholders so the world works immediately even with no photos uploaded yet
+  d.images = Array.from({ length: d.gallery }, (_, k) => makeGalleryImage(k, tint, d.title.toUpperCase()));
+  // then swap in any real photo found on disk for each slot, as soon as it loads
+  d.images.forEach((_, k)=>{
+    findRealImage(d.id, k).then(url=>{
+      if(url) d.images[k] = url;
+    });
+  });
+});
+
+/* =========================================================================
+   GROUND
+   ========================================================================= */
+const groundMat = new THREE.MeshBasicMaterial({ map: groundTex });
+{
+  // sized well beyond the max zoom-out frustum so the corners of the view
+  // never run past the plane into raw background — that gap was showing up
+  // as a visible color seam at the edges when fully zoomed out.
+  const GROUND_SIZE = 6000;
+  groundTex.repeat.set(14 * GROUND_SIZE/220, 14 * GROUND_SIZE/220);
+  const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE);
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI/2;
+  scene.add(ground);
+}
+
+/* =========================================================================
+   BUILDINGS — instanced per texture variant, grown from ground on boot
+   ========================================================================= */
+const CITY_HALF = 46;
+const CELL = 3.6;
+const boxGeo = new THREE.BoxGeometry(1,1,1);
+boxGeo.translate(0,0.5,0); // pivot at base so scale.y grows upward
+
+const buildingMeshes = buildingTexVariants.map(tex=>{
+  const mat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff });
+  const mesh = new THREE.InstancedMesh(boxGeo, mat, 400);
+  mesh.count = 0;
+  scene.add(mesh);
+  return mesh;
+});
+
+const edgeGeo = new THREE.EdgesGeometry(boxGeo);
+const edgeTints = [0x6fe3d4, 0x5bc98a, 0x5a7fa3, 0xeaf5f2];
+
+// world units represented by one full tile of the window texture —
+// buildings bake their own UVs from these constants (see mergeBuildingFaces
+// and the special-shape builders below) instead of stretching a shared
+// 0..1 UV across whatever size box they happen to be, so the window
+// pattern always reads at the same crisp, undistorted density.
+const TEX_UNIT_U = 1.6;
+const TEX_UNIT_V = 1.8;
+
+// clone the shared facade texture with its own repeat, for meshes that
+// aren't part of the instanced/merged box pipeline (cones, tiered towers)
+function cloneFacadeTexture(baseTex, repeatU, repeatV){
+  const tex = baseTex.clone();
+  tex.needsUpdate = true;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.NearestFilter;
+  tex.repeat.set(Math.max(0.3, repeatU), Math.max(0.3, repeatV));
+  return tex;
+}
+
+// flat, windowless roof material — rooftops and the undersides of setbacks
+// read as solid concrete/tar rather than more windows facing the sky
+const capMat = new THREE.MeshBasicMaterial({ color: 0x0a0f12 });
+
+/* -------------------------------------------------------------------------
+   SPECIAL SILHOUETTES — a handful of buildings break from the plain box:
+   tapering conical towers and tiered, New-York-style setback skyscrapers,
+   both built as low-poly standalone meshes wearing the same window facade.
+   ------------------------------------------------------------------------- */
+function createConeTower(x, z, w, d, h, variant){
+  const group = new THREE.Group();
+  const baseR = Math.max(w,d)/2;
+  const topR = baseR*0.3;
+  const segs = Math.random()<0.5 ? 6 : 8; // low-poly, faceted PS1 look
+
+  const geo = new THREE.CylinderGeometry(topR, baseR, h, segs, 1);
+  geo.translate(0, h/2, 0);
+  const tex = cloneFacadeTexture(buildingTexVariants[variant], (2*Math.PI*baseR)/TEX_UNIT_U, h/TEX_UNIT_V);
+  // CylinderGeometry groups faces as [0: side, 1: top cap, 2: bottom cap] —
+  // give the side the window facade and cap both ends with flat roof material
+  const mesh = new THREE.Mesh(geo, [new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff }), capMat, capMat]);
+  group.add(mesh);
+
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: edgeTints[variant], transparent:true, opacity:0.5 }));
+  group.add(edge);
+
+  // rooftop spire/antenna, same visual language as the box buildings' roof props
+  const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.05,1.1,5), new THREE.MeshBasicMaterial({ color: 0x0c1216 }));
+  spire.position.y = h + 0.5;
+  group.add(spire);
+  const spireEdge = new THREE.LineSegments(new THREE.EdgesGeometry(spire.geometry), new THREE.LineBasicMaterial({ color: edgeTints[variant], transparent:true, opacity:0.45 }));
+  spireEdge.position.copy(spire.position);
+  group.add(spireEdge);
+
+  group.position.set(x,0,z);
+  return group;
+}
+
+function createSetbackTower(x, z, w, d, h, variant){
+  const group = new THREE.Group();
+  const tierCount = Math.random()<0.5 ? 3 : 4;
+  let tw = w, td = d, y = 0;
+
+  for(let i=0; i<tierCount; i++){
+    const isLast = i === tierCount-1;
+    const th = isLast ? Math.max(h - y, 0.8) : h*(0.22 + Math.random()*0.12);
+    const geo = new THREE.BoxGeometry(tw, th, td);
+    const tex = cloneFacadeTexture(buildingTexVariants[variant], ((tw+td)/2)/TEX_UNIT_U, th/TEX_UNIT_V);
+    const wallMat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff });
+    // BoxGeometry groups faces as [+x,-x,+y,-y,+z,-z] — cap only the top
+    // (+y) with flat roof material so each setback ledge isn't windowed
+    const mesh = new THREE.Mesh(geo, [wallMat, wallMat, capMat, wallMat, wallMat, wallMat]);
+    mesh.position.set(0, y + th/2, 0);
+    group.add(mesh);
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: edgeTints[variant], transparent:true, opacity:0.5 }));
+    edge.position.copy(mesh.position);
+    group.add(edge);
+
+    y += th;
+    if(!isLast){ tw *= 0.68 + Math.random()*0.1; td *= 0.68 + Math.random()*0.1; }
+  }
+
+  // thin needle spire on top, the classic New-York skyscraper silhouette
+  const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.025,1.4,5), new THREE.MeshBasicMaterial({ color: 0x0c1216 }));
+  spire.position.y = y + 0.7;
+  group.add(spire);
+  const spireEdge = new THREE.LineSegments(new THREE.EdgesGeometry(spire.geometry), new THREE.LineBasicMaterial({ color: edgeTints[variant], transparent:true, opacity:0.45 }));
+  spireEdge.position.copy(spire.position);
+  group.add(spireEdge);
+
+  group.position.set(x,0,z);
+  return group;
+}
+
+const buildingData = []; // {mesh, index, w,d,h, x,z, delay, edge}
+const specialBuildings = []; // {group, delay} — cone towers & setback skyscrapers
+// flat footprint list used only for POV walking collision — every building,
+// regular or special, contributes one axis-aligned box here
+const COLLIDERS = []; // {x,z,hw,hd}
+{
+  const dummy = new THREE.Object3D();
+  const counters = [0,0,0,0];
+  let n = 0;
+  for(let gx=-12; gx<=12; gx++){
+    for(let gz=-12; gz<=12; gz++){
+      // leave every 3rd row/col open as a street, and skip the very center for a plaza
+      if(gx % 3 === 0 || gz % 3 === 0) continue;
+      if(Math.abs(gx) + Math.abs(gz) < 2) continue;
+      if(Math.random() > 0.93) continue;
+      const x = gx*CELL, z = gz*CELL;
+      const h = 2 + Math.random()*Math.random()*13;
+      const w = 1.6 + Math.random()*1.3;
+      const d = 1.6 + Math.random()*1.3;
+
+      // occasionally swap a tall building for a more elaborate silhouette —
+      // a tapering conical tower or a tiered, New-York-style setback tower
+      if(h > 8 && Math.random() < 0.1){
+        const specialVariant = (Math.random()*buildingMeshes.length)|0;
+        const special = Math.random() < 0.5
+          ? createConeTower(x,z,w,d,h,specialVariant)
+          : createSetbackTower(x,z,w,d,h,specialVariant);
+        special.scale.set(0.001,0.001,0.001);
+        scene.add(special);
+        specialBuildings.push({ group: special, delay: Math.random()*0.4 });
+        COLLIDERS.push({ x, z, hw: w/2, hd: d/2 });
+        n++;
+        continue;
+      }
+
+      const variant = n % buildingMeshes.length;
+      const mesh = buildingMeshes[variant];
+      const idx = counters[variant]++;
+      if(idx >= mesh.instanceMatrix.count) continue;
+      dummy.position.set(x,0,z);
+      dummy.scale.set(w,0.001,d);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(idx, dummy.matrix);
+
+      // glowing wireframe outline — reads instantly even at low light
+      const edgeMat = new THREE.LineBasicMaterial({ color: edgeTints[variant], transparent:true, opacity:0.55 });
+      const edge = new THREE.LineSegments(edgeGeo, edgeMat);
+      edge.position.set(x,0,z);
+      edge.scale.set(w,0.001,d);
+      scene.add(edge);
+
+      // rooftop prop on some of the taller buildings — antenna, tank, vent
+      // block — cheap low-poly detail for a more believable skyline
+      let roof = null;
+      if(h > 5 && Math.random() < 0.4){
+        const kind = Math.random();
+        const roofMat = new THREE.MeshBasicMaterial({ color: 0x0c1216 });
+        if(kind < 0.4){
+          roof = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.9,5), roofMat); // antenna
+        } else if(kind < 0.75){
+          roof = new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.4,8), roofMat); // tank
+        } else {
+          roof = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.3,0.5), roofMat); // vent block
+        }
+        const roofEdge = new THREE.LineSegments(new THREE.EdgesGeometry(roof.geometry), new THREE.LineBasicMaterial({ color: edgeTints[variant], transparent:true, opacity:0.45 }));
+        roof.add(roofEdge);
+        roof.position.set(x + (Math.random()-0.5)*w*0.4, 0, z + (Math.random()-0.5)*d*0.4);
+        roof.visible = false;
+        scene.add(roof);
+      }
+
+      buildingData.push({ mesh, idx, w,h,d, x,z, delay: Math.random()*0.4, edge, roof, variant });
+      COLLIDERS.push({ x, z, hw: w/2, hd: d/2 });
+      n++;
+    }
+  }
+  buildingMeshes.forEach((m,i)=> m.count = counters[i]);
+}
+
+/* street coordinates — same lines left open by the building grid above */
+const STREET_COORDS = [-12,-9,-6,-3,0,3,6,9,12].map(k=>k*CELL);
+
+/* =========================================================================
+   ROADS & SIDEWALKS — a real paved cross-section along every street: a
+   lighter sidewalk band next to the buildings on both sides, a darker
+   asphalt road in the middle (where the cars actually drive), a glowing
+   curb line at the boundary, and a dashed centre lane line. This is a thin
+   decal sitting just above the base ground plane — it's purely visual and
+   doesn't change movement or collision.
+   ========================================================================= */
+const ROAD_HALF = 1.15;        // half-width of the asphalt/car lane
+const SIDEWALK_HALF = 1.65;    // half-width of the full corridor incl. sidewalks
+const ROAD_TILE_LEN = 1.0;     // world length of one dash+gap tile
+const CORRIDOR_LEN = (CITY_HALF + CELL*1.5) * 2; // full length a corridor spans
+
+function drawRoadProfile(ctx, w, h, alongIsY){
+  const across = alongIsY ? w : h; // the narrow, non-repeating dimension
+  const along  = alongIsY ? h : w; // the long, tiled dimension
+  const pxPerUnitAcross = across / (SIDEWALK_HALF*2);
+
+  // sidewalk base, full strip
+  ctx.fillStyle = '#141c20';
+  ctx.fillRect(0,0,w,h);
+
+  // faint paver seams — painted over by the road fill below wherever it overlaps
+  ctx.strokeStyle = 'rgba(111,227,212,0.10)';
+  ctx.lineWidth = 1;
+  const seamStep = 0.45 * pxPerUnitAcross;
+  for(let s=seamStep; s<along; s+=seamStep){
+    ctx.beginPath();
+    if(alongIsY){ ctx.moveTo(0,s); ctx.lineTo(w,s); } else { ctx.moveTo(s,0); ctx.lineTo(s,h); }
+    ctx.stroke();
+  }
+
+  // asphalt road band, centred across the strip
+  const roadPx = ROAD_HALF * pxPerUnitAcross;
+  const centerAcross = across/2;
+  ctx.fillStyle = '#08090b';
+  if(alongIsY) ctx.fillRect(centerAcross-roadPx, 0, roadPx*2, h);
+  else ctx.fillRect(0, centerAcross-roadPx, w, roadPx*2);
+
+  // curb glow at the sidewalk/road boundary
+  ctx.strokeStyle = 'rgba(111,227,212,0.32)';
+  ctx.lineWidth = Math.max(1, 0.035*pxPerUnitAcross);
+  ctx.beginPath();
+  if(alongIsY){
+    ctx.moveTo(centerAcross-roadPx,0); ctx.lineTo(centerAcross-roadPx,h);
+    ctx.moveTo(centerAcross+roadPx,0); ctx.lineTo(centerAcross+roadPx,h);
+  } else {
+    ctx.moveTo(0,centerAcross-roadPx); ctx.lineTo(w,centerAcross-roadPx);
+    ctx.moveTo(0,centerAcross+roadPx); ctx.lineTo(w,centerAcross+roadPx);
+  }
+  ctx.stroke();
+
+  // dashed centre lane line, glowing like the rest of the world's wireframe accents
+  ctx.strokeStyle = 'rgba(91,201,138,0.9)';
+  ctx.lineWidth = Math.max(1.5, 0.05*pxPerUnitAcross);
+  ctx.shadowColor = 'rgba(91,201,138,0.8)';
+  ctx.shadowBlur = 3;
+  const dashLen = 0.55*along;
+  ctx.beginPath();
+  if(alongIsY){ ctx.moveTo(centerAcross,0); ctx.lineTo(centerAcross,dashLen); }
+  else { ctx.moveTo(0,centerAcross); ctx.lineTo(dashLen,centerAcross); }
+  ctx.stroke();
+}
+
+function makeRoadTexture(vertical){
+  const acrossPx = 216, tilePx = 72;
+  const w = vertical ? acrossPx : tilePx;
+  const h = vertical ? tilePx : acrossPx;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  drawRoadProfile(c.getContext('2d'), w, h, vertical);
+  const tex = new THREE.CanvasTexture(c);
+  if(vertical){ tex.wrapS = THREE.ClampToEdgeWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1, CORRIDOR_LEN/ROAD_TILE_LEN); }
+  else { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.ClampToEdgeWrapping; tex.repeat.set(CORRIDOR_LEN/ROAD_TILE_LEN, 1); }
+  return tex;
+}
+
+const roadMatV = new THREE.MeshBasicMaterial({ map: makeRoadTexture(true) });
+const roadMatH = new THREE.MeshBasicMaterial({ map: makeRoadTexture(false) });
+
+STREET_COORDS.forEach(coord=>{
+  const vMesh = new THREE.Mesh(new THREE.PlaneGeometry(SIDEWALK_HALF*2, CORRIDOR_LEN), roadMatV);
+  vMesh.rotation.x = -Math.PI/2;
+  vMesh.position.set(coord, 0.015, 0);
+  scene.add(vMesh);
+
+  const hMesh = new THREE.Mesh(new THREE.PlaneGeometry(CORRIDOR_LEN, SIDEWALK_HALF*2), roadMatH);
+  hMesh.rotation.x = -Math.PI/2;
+  hMesh.position.set(0, 0.015, coord);
+  scene.add(hMesh);
+});
+
+// plain asphalt patch over every intersection — keeps lane dashes and
+// sidewalk seams from crossing messily where two streets meet, the same
+// way real intersections have no lane paint running through them
+{
+  const plazaGeo = new THREE.PlaneGeometry(ROAD_HALF*2, ROAD_HALF*2);
+  plazaGeo.rotateX(-Math.PI/2);
+  const plazaMat = new THREE.MeshBasicMaterial({ color: 0x08090b });
+  const plazaMesh = new THREE.InstancedMesh(plazaGeo, plazaMat, STREET_COORDS.length*STREET_COORDS.length);
+  const dummy = new THREE.Object3D();
+  let pi = 0;
+  STREET_COORDS.forEach(x=>{
+    STREET_COORDS.forEach(z=>{
+      dummy.position.set(x, 0.03, z);
+      dummy.updateMatrix();
+      plazaMesh.setMatrixAt(pi++, dummy.matrix);
+    });
+  });
+  scene.add(plazaMesh);
+}
+
+// zebra crosswalks — one on each of the 4 approaches to every intersection,
+// right where a sidewalk would need to cross the road
+const CROSSWALK_DEPTH = 0.6;
+function makeCrosswalkTexture(vertical){
+  const stripes = 6, roadPx = 160, depthPx = 56;
+  const w = vertical ? roadPx : depthPx;
+  const h = vertical ? depthPx : roadPx;
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  const axisLen = vertical ? w : h;
+  const slot = axisLen/stripes;
+  const stripeW = slot * 0.32; // thin bar centred within its slot, rest is gap
+  ctx.fillStyle = 'rgba(220,235,232,0.5)';
+  for(let i=0;i<stripes;i++){
+    const pos = i*slot + (slot-stripeW)/2;
+    if(vertical) ctx.fillRect(pos,0,stripeW,h);
+    else ctx.fillRect(0,pos,w,stripeW);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+{
+  const crossMatV = new THREE.MeshBasicMaterial({ map: makeCrosswalkTexture(true), transparent:true });
+  const crossMatH = new THREE.MeshBasicMaterial({ map: makeCrosswalkTexture(false), transparent:true });
+  const crossGeoV = new THREE.PlaneGeometry(ROAD_HALF*2, CROSSWALK_DEPTH); crossGeoV.rotateX(-Math.PI/2);
+  const crossGeoH = new THREE.PlaneGeometry(CROSSWALK_DEPTH, ROAD_HALF*2); crossGeoH.rotateX(-Math.PI/2);
+  const meshV = new THREE.InstancedMesh(crossGeoV, crossMatV, STREET_COORDS.length*STREET_COORDS.length*2);
+  const meshH = new THREE.InstancedMesh(crossGeoH, crossMatH, STREET_COORDS.length*STREET_COORDS.length*2);
+  const dummy = new THREE.Object3D();
+  let vi=0, hi=0;
+  const setback = ROAD_HALF + CROSSWALK_DEPTH/2;
+  STREET_COORDS.forEach(x=>{
+    STREET_COORDS.forEach(z=>{
+      // crosses the vertical (N-S) road — sits on its north & south approach
+      dummy.position.set(x, 0.045, z - setback); dummy.updateMatrix(); meshV.setMatrixAt(vi++, dummy.matrix);
+      dummy.position.set(x, 0.045, z + setback); dummy.updateMatrix(); meshV.setMatrixAt(vi++, dummy.matrix);
+      // crosses the horizontal (E-W) road — sits on its west & east approach
+      dummy.position.set(x - setback, 0.045, z); dummy.updateMatrix(); meshH.setMatrixAt(hi++, dummy.matrix);
+      dummy.position.set(x + setback, 0.045, z); dummy.updateMatrix(); meshH.setMatrixAt(hi++, dummy.matrix);
+    });
+  });
+  scene.add(meshV); scene.add(meshH);
+}
+
+// raised curbs along every sidewalk/road boundary — real 3D geometry, not
+// just a painted line — broken into block-length segments so they don't
+// run straight across the middle of a perpendicular street
+const CURB_HEIGHT = 0.035, CURB_WIDTH = 0.05;
+function curbSegments(){
+  const half = CORRIDOR_LEN/2, gap = ROAD_HALF + CROSSWALK_DEPTH;
+  const cuts = [-half, ...STREET_COORDS, half];
+  const segs = [];
+  for(let i=0;i<cuts.length-1;i++){
+    let a = cuts[i], b = cuts[i+1];
+    if(i>0) a += gap;
+    if(i<cuts.length-2) b -= gap;
+    if(b > a) segs.push([a,b]);
+  }
+  return segs;
+}
+{
+  const segs = curbSegments();
+  const curbMat = new THREE.MeshBasicMaterial({ color: 0x2c383d });
+  const totalCurbs = STREET_COORDS.length * 4 * segs.length; // 2 sides x (vertical+horizontal) corridors
+  const curbMesh = new THREE.InstancedMesh(boxGeo, curbMat, totalCurbs);
+  const dummy = new THREE.Object3D();
+  let ci = 0;
+  STREET_COORDS.forEach(coord=>{
+    // vertical corridor — curbs run along Z at coord ∓ ROAD_HALF
+    [-1,1].forEach(side=>{
+      segs.forEach(([a,b])=>{
+        const len = b-a, mid = (a+b)/2;
+        dummy.position.set(coord + side*ROAD_HALF, 0, mid);
+        dummy.rotation.set(0,0,0);
+        dummy.scale.set(CURB_WIDTH, CURB_HEIGHT, len);
+        dummy.updateMatrix();
+        curbMesh.setMatrixAt(ci++, dummy.matrix);
+      });
+    });
+    // horizontal corridor — curbs run along X at coord ∓ ROAD_HALF
+    [-1,1].forEach(side=>{
+      segs.forEach(([a,b])=>{
+        const len = b-a, mid = (a+b)/2;
+        dummy.position.set(mid, 0, coord + side*ROAD_HALF);
+        dummy.rotation.set(0,0,0);
+        dummy.scale.set(len, CURB_HEIGHT, CURB_WIDTH);
+        dummy.updateMatrix();
+        curbMesh.setMatrixAt(ci++, dummy.matrix);
+      });
+    });
+  });
+  scene.add(curbMesh);
+}
+
+/* =========================================================================
+   TRAFFIC LIGHTS — a simple, deterministic stop/go cycle per intersection.
+   Each intersection gets its own time offset (hashed from its coordinates)
+   so the whole city doesn't switch in unison; cars and pedestrians heading
+   the "red" way for that intersection ease to a stop at the line, and
+   anything already inside the intersection is always let through.
+   ========================================================================= */
+const TRAFFIC_CYCLE = 9; // seconds for a full light cycle
+function trafficHorizontalGreen(ix, iz, time){
+  const h = Math.sin(ix*12.9898 + iz*78.233) * 43758.5453;
+  const offset = (h - Math.floor(h)) * TRAFFIC_CYCLE;
+  return ((time + offset) % TRAFFIC_CYCLE) < TRAFFIC_CYCLE/2;
+}
+function intersectionSpeedMul(pos, dir, lane, horizontal, stopSetback, rampDist, time){
+  for(const cross of STREET_COORDS){
+    const distAhead = (cross - pos) * dir;
+    if(distAhead > stopSetback && distAhead < rampDist){
+      const ix = horizontal ? cross : lane, iz = horizontal ? lane : cross;
+      const green = trafficHorizontalGreen(ix, iz, time);
+      if(horizontal !== green){
+        return Math.max(0, (distAhead - stopSetback) / (rampDist - stopSetback));
+      }
+      break;
+    }
+  }
+  return 1;
+}
+
+// small glowing marker at every intersection, tinted by which direction
+// currently has the right of way — purely a readability aid so the traffic
+// stopping/going doesn't look unexplained
+const trafficLightGeo = new THREE.SphereGeometry(0.05, 8, 8);
+const trafficLightMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent:true, opacity:0.92 });
+const trafficLightCount = STREET_COORDS.length*STREET_COORDS.length;
+const trafficLights = new THREE.InstancedMesh(trafficLightGeo, trafficLightMat, trafficLightCount);
+trafficLights.instanceColor = new THREE.BufferAttribute(new Float32Array(trafficLightCount*3), 3);
+const TL_GREEN_H = new THREE.Color(0x6fe3d4), TL_GREEN_V = new THREE.Color(0x5a7fa3);
+const trafficLightCoords = [];
+{
+  const dummy = new THREE.Object3D();
+  let ti = 0;
+  STREET_COORDS.forEach(x=>{
+    STREET_COORDS.forEach(z=>{
+      dummy.position.set(x + ROAD_HALF + 0.14, 1.3, z + ROAD_HALF + 0.14);
+      dummy.updateMatrix();
+      trafficLights.setMatrixAt(ti, dummy.matrix);
+      trafficLightCoords.push({ x, z, idx: ti });
+      ti++;
+    });
+  });
+  scene.add(trafficLights);
+}
+
+/* =========================================================================
+   VEHICLES — small two-part cars, scaled to sit naturally against the
+   buildings and streets, patrolling the open roads with continuous traffic
+   flow (drive to the edge of the city, wrap back around — no sliding back
+   and forth)
+   ========================================================================= */
+function createCar(tint, bodyColor){
+  const group = new THREE.Group();
+
+  const bodyGeo = new THREE.BoxGeometry(1.2, 0.3, 0.58);
+  const body = new THREE.Mesh(bodyGeo, new THREE.MeshBasicMaterial({ color: bodyColor }));
+  body.position.y = 0.26;
+  group.add(body);
+
+  const cabinGeo = new THREE.BoxGeometry(0.62, 0.22, 0.5);
+  const cabin = new THREE.Mesh(cabinGeo, new THREE.MeshBasicMaterial({ color: 0x05070a }));
+  cabin.position.set(-0.05, 0.52, 0);
+  group.add(cabin);
+
+  // wheels
+  const wheelGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.08, 10);
+  const wheelMat = new THREE.MeshBasicMaterial({ color: 0x040506 });
+  [[0.4,0.32],[0.4,-0.32],[-0.4,0.32],[-0.4,-0.32]].forEach(([x,z])=>{
+    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+    wheel.rotation.x = Math.PI/2;
+    wheel.position.set(x, 0.12, z);
+    group.add(wheel);
+  });
+
+  // head / tail lights
+  const lightGeo = new THREE.BoxGeometry(0.05, 0.06, 0.46);
+  const headlight = new THREE.Mesh(lightGeo, new THREE.MeshBasicMaterial({ color: 0xeaf5f2 }));
+  headlight.position.set(0.61, 0.28, 0);
+  group.add(headlight);
+  const taillight = new THREE.Mesh(lightGeo, new THREE.MeshBasicMaterial({ color: tint }));
+  taillight.position.set(-0.61, 0.28, 0);
+  group.add(taillight);
+
+  const trimMat = new THREE.LineBasicMaterial({ color: tint, transparent:true, opacity:0.7 });
+  const bodyEdge = new THREE.LineSegments(new THREE.EdgesGeometry(bodyGeo), trimMat);
+  bodyEdge.position.copy(body.position); group.add(bodyEdge);
+  const cabinEdge = new THREE.LineSegments(new THREE.EdgesGeometry(cabinGeo), trimMat);
+  cabinEdge.position.copy(cabin.position); group.add(cabinEdge);
+
+  return group;
+}
+
+const carTints = [0x6fe3d4, 0x5bc98a, 0x5a7fa3, 0xeaf5f2];
+const carBodyColors = [0x10161a, 0x0c1216, 0x14191c, 0x0d1114];
+const vehicles = [];
+for(let i=0;i<28;i++){
+  const car = createCar(carTints[i % carTints.length], carBodyColors[i % carBodyColors.length]);
+  const horizontal = Math.random() > 0.5;
+  const lane = STREET_COORDS[(Math.random()*STREET_COORDS.length)|0];
+  const dir = Math.random() > 0.5 ? 1 : -1;
+  car.rotation.y = horizontal ? (dir>0 ? 0 : Math.PI) : (dir>0 ? Math.PI/2 : -Math.PI/2);
+  car.userData = { horizontal, lane, dir, speed: 3.2+Math.random()*2.6, pos:(Math.random()-0.5)*CITY_HALF*2 };
+  scene.add(car);
+  vehicles.push(car);
+}
+
+/* =========================================================================
+   PEDESTRIANS — small low-poly humanoids (head / torso / arms / legs),
+   built like little PS1-era figures rather than plain boxes. Walkers get a
+   simple procedural leg/arm swing and move continuously along their street.
+   ========================================================================= */
+function createPerson(tint){
+  const group = new THREE.Group();
+  const clothMat = new THREE.MeshBasicMaterial({ color: tint });
+  const darkMat = new THREE.MeshBasicMaterial({ color: 0x0b1013 });
+  const headMat = new THREE.MeshBasicMaterial({ color: 0xeaf5f2 });
+
+  const hipY = 0.20, legLen = 0.20, torsoH = 0.20, torsoW = 0.15, torsoD = 0.09, headS = 0.105, armLen = 0.17;
+
+  const legGeo = new THREE.BoxGeometry(0.055, legLen, 0.065);
+  legGeo.translate(0, -legLen/2, 0); // pivot at hip so it can swing
+
+  const leftLegPivot = new THREE.Group(); leftLegPivot.position.set(-0.045, hipY, 0);
+  leftLegPivot.add(new THREE.Mesh(legGeo, darkMat));
+  group.add(leftLegPivot);
+
+  const rightLegPivot = new THREE.Group(); rightLegPivot.position.set(0.045, hipY, 0);
+  rightLegPivot.add(new THREE.Mesh(legGeo, darkMat));
+  group.add(rightLegPivot);
+
+  const torsoGeo = new THREE.BoxGeometry(torsoW, torsoH, torsoD);
+  const torso = new THREE.Mesh(torsoGeo, clothMat);
+  torso.position.set(0, hipY + torsoH/2, 0);
+  group.add(torso);
+
+  const armGeo = new THREE.BoxGeometry(0.045, armLen, 0.05);
+  armGeo.translate(0, -armLen/2, 0);
+  const shoulderY = hipY + torsoH - 0.02;
+
+  const leftArmPivot = new THREE.Group(); leftArmPivot.position.set(-torsoW/2-0.025, shoulderY, 0);
+  leftArmPivot.add(new THREE.Mesh(armGeo, clothMat));
+  group.add(leftArmPivot);
+
+  const rightArmPivot = new THREE.Group(); rightArmPivot.position.set(torsoW/2+0.025, shoulderY, 0);
+  rightArmPivot.add(new THREE.Mesh(armGeo, clothMat));
+  group.add(rightArmPivot);
+
+  const headGeo = new THREE.BoxGeometry(headS, headS, headS);
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.set(0, hipY + torsoH + headS/2 + 0.02, 0);
+  group.add(head);
+  const headEdge = new THREE.LineSegments(new THREE.EdgesGeometry(headGeo), new THREE.LineBasicMaterial({ color: tint, transparent:true, opacity:0.55 }));
+  headEdge.position.copy(head.position);
+  group.add(headEdge);
+
+  group.userData.rig = { legL:leftLegPivot, legR:rightLegPivot, armL:leftArmPivot, armR:rightArmPivot };
+  return group;
+}
+
+function randomSidewalkPoint(){
+  const horizontal = Math.random() > 0.5;
+  const lane = STREET_COORDS[(Math.random()*STREET_COORDS.length)|0] + (Math.random()>0.5 ? 1.25 : -1.25);
+  const free = (Math.random()-0.5) * CITY_HALF*1.7;
+  return { horizontal, lane, free };
+}
+
+const standingPeople = [];
+for(let i=0;i<3;i++){
+  const p = createPerson(edgeTints[i % edgeTints.length]);
+  const loc = randomSidewalkPoint();
+  if(loc.horizontal) p.position.set(loc.free, 0, loc.lane);
+  else p.position.set(loc.lane, 0, loc.free);
+  p.rotation.y = Math.random()*Math.PI*2;
+  p.userData.phase = Math.random()*Math.PI*2;
+  scene.add(p);
+  standingPeople.push(p);
+}
+
+const walkingPeople = [];
+for(let i=0;i<49;i++){
+  const p = createPerson(edgeTints[i % edgeTints.length]);
+  const horizontal = Math.random() > 0.5;
+  const lane = STREET_COORDS[(Math.random()*STREET_COORDS.length)|0] + (Math.random()>0.5 ? 1.25 : -1.25);
+  const dir = Math.random() > 0.5 ? 1 : -1;
+  p.rotation.y = horizontal ? (dir>0 ? Math.PI/2 : -Math.PI/2) : (dir>0 ? 0 : Math.PI);
+  p.userData.horizontal = horizontal;
+  p.userData.lane = lane;
+  p.userData.dir = dir;
+  p.userData.speed = 0.55 + Math.random()*0.5;
+  p.userData.pos = (Math.random()-0.5) * CITY_HALF*1.8;
+  p.userData.phase = Math.random()*Math.PI*2;
+  scene.add(p);
+  walkingPeople.push(p);
+}
+
+/* =========================================================================
+   CATS — small low-poly strays that roam the sidewalks freely (not locked
+   to a single axis like the cars/pedestrians), plus a few sitting still.
+   ========================================================================= */
+function createCat(tint){
+  const group = new THREE.Group();
+  const furMat = new THREE.MeshBasicMaterial({ color: tint });
+  const darkMat = new THREE.MeshBasicMaterial({ color: 0x090c0e });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x6fe3d4 });
+  const trimMat = new THREE.LineBasicMaterial({ color: tint, transparent:true, opacity:0.6 });
+
+  const hipY = 0.085, legLen = 0.09;
+
+  const legGeo = new THREE.BoxGeometry(0.03, legLen, 0.03);
+  legGeo.translate(0, -legLen/2, 0);
+  const legPositions = [[-0.045,0.11],[0.045,0.11],[-0.045,-0.1],[0.045,-0.1]];
+  const legs = legPositions.map(([x,z])=>{
+    const pivot = new THREE.Group(); pivot.position.set(x, hipY, z);
+    pivot.add(new THREE.Mesh(legGeo, darkMat));
+    group.add(pivot);
+    return pivot;
+  });
+
+  const bodyGeo = new THREE.BoxGeometry(0.11, 0.11, 0.26);
+  const body = new THREE.Mesh(bodyGeo, furMat);
+  body.position.set(0, hipY+0.075, 0);
+  group.add(body);
+  const bodyEdge = new THREE.LineSegments(new THREE.EdgesGeometry(bodyGeo), trimMat);
+  bodyEdge.position.copy(body.position);
+  group.add(bodyEdge);
+
+  const headGeo = new THREE.BoxGeometry(0.09, 0.085, 0.09);
+  const head = new THREE.Mesh(headGeo, furMat);
+  head.position.set(0, hipY+0.13, 0.155);
+  group.add(head);
+  const headEdge = new THREE.LineSegments(new THREE.EdgesGeometry(headGeo), trimMat);
+  headEdge.position.copy(head.position);
+  group.add(headEdge);
+
+  const earGeo = new THREE.ConeGeometry(0.028, 0.05, 4);
+  const earL = new THREE.Mesh(earGeo, furMat);
+  earL.position.set(-0.03, hipY+0.19, 0.175); earL.rotation.y = Math.PI/4;
+  group.add(earL);
+  const earR = new THREE.Mesh(earGeo, furMat);
+  earR.position.set(0.03, hipY+0.19, 0.175); earR.rotation.y = Math.PI/4;
+  group.add(earR);
+
+  const eyeGeo = new THREE.BoxGeometry(0.015,0.015,0.01);
+  const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-0.028, hipY+0.13, 0.2);
+  const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set(0.028, hipY+0.13, 0.2);
+  group.add(eyeL); group.add(eyeR);
+
+  const tailPivot = new THREE.Group(); tailPivot.position.set(0, hipY+0.1, -0.13);
+  const tailGeo = new THREE.BoxGeometry(0.025,0.025,0.22);
+  tailGeo.translate(0,0,-0.11);
+  const tail = new THREE.Mesh(tailGeo, furMat);
+  tailPivot.add(tail);
+  tailPivot.rotation.x = -0.3;
+  group.add(tailPivot);
+
+  group.userData.rig = { legs, tail:tailPivot };
+  return group;
+}
+
+const CAT_RADIUS = 0.16;
+function resolveCatCollisions(cat){
+  for(const c of COLLIDERS){
+    const dx = cat.position.x - c.x, dz = cat.position.z - c.z;
+    const ax = Math.abs(dx), az = Math.abs(dz);
+    if(ax > c.hw + CAT_RADIUS || az > c.hd + CAT_RADIUS) continue;
+    const overlapX = c.hw + CAT_RADIUS - ax;
+    const overlapZ = c.hd + CAT_RADIUS - az;
+    if(overlapX < overlapZ){
+      cat.position.x += (dx < 0 ? -overlapX : overlapX);
+    } else {
+      cat.position.z += (dz < 0 ? -overlapZ : overlapZ);
+    }
+  }
+}
+
+const catTints = [0x6fe3d4, 0x5bc98a, 0x5a7fa3, 0xeaf5f2];
+
+function randomCatPoint(){
+  const p = randomSidewalkPoint();
+  return p.horizontal ? { x:p.free, z:p.lane } : { x:p.lane, z:p.free };
+}
+
+const sittingCats = [];
+for(let i=0;i<6;i++){
+  const c = createCat(catTints[i % catTints.length]);
+  const p = randomCatPoint();
+  c.position.set(p.x, 0, p.z);
+  c.rotation.y = Math.random()*Math.PI*2;
+  c.userData.phase = Math.random()*Math.PI*2;
+  scene.add(c);
+  sittingCats.push(c);
+}
+
+const roamingCats = [];
+for(let i=0;i<14;i++){
+  const c = createCat(catTints[i % catTints.length]);
+  const p = randomCatPoint();
+  c.position.set(p.x, 0, p.z);
+  c.userData.target = randomCatPoint();
+  c.userData.speed = 0.5 + Math.random()*0.55;
+  c.userData.pauseTimer = Math.random()*2;
+  c.userData.gaitPhase = Math.random()*Math.PI*2;
+  scene.add(c);
+  roamingCats.push(c);
+}
+
+/* =========================================================================
+   ASCII RAIN / FLOATING PARTICLES
+   ========================================================================= */
+const glyphTexPool = GLYPHS.slice(0,10).map(g => makeGlyphTexture(g, Math.random()>0.5 ? '#6fe3d4' : '#5bc98a'));
+const rainSprites = [];
+const RAIN_COUNT = 220;
+for(let i=0;i<RAIN_COUNT;i++){
+  const tex = glyphTexPool[(Math.random()*glyphTexPool.length)|0];
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent:true, opacity: 0.15+Math.random()*0.5, depthWrite:false });
+  const s = new THREE.Sprite(mat);
+  const rising = Math.random() < 0.18;
+  s.position.set((Math.random()-0.5)*70, Math.random()*22, (Math.random()-0.5)*70);
+  s.scale.setScalar(0.32+Math.random()*0.25);
+  s.userData = { speed: 0.6+Math.random()*2.2, rising, baseOpacity: mat.opacity };
+  scene.add(s);
+  rainSprites.push(s);
+}
+
+/* =========================================================================
+   BILLBOARDS — decorative / advertisement text, not clickable
+   ========================================================================= */
+const decorGroup = new THREE.Group();
+scene.add(decorGroup);
+for(let i=0;i<ADS.length;i++){
+  const { texture, aspect:ta } = makeTextTexture(ADS[i], { fg:'#5a7fa3', size:34, weight:400 });
+  const mat = new THREE.SpriteMaterial({ map:texture, transparent:true, opacity:0.55, depthWrite:false });
+  const s = new THREE.Sprite(mat);
+  const h = 0.9, w = h*ta;
+  s.scale.set(w,h,1);
+  const angle = (i/ADS.length) * Math.PI*2;
+  const r = 26 + Math.random()*6;
+  s.position.set(Math.cos(angle)*r, 3+Math.random()*6, Math.sin(angle)*r);
+  decorGroup.add(s);
+}
+
+/* =========================================================================
+   PLACEHOLDERS — the only clickable signs in the world
+   ========================================================================= */
+const placeholderGroup = new THREE.Group();
+scene.add(placeholderGroup);
+const placeholderMeshes = [];
+
+DISTRICTS.forEach((d, i)=>{
+  if(d.contact) return; // mounted on a car below, not planted in the ground
+
+  const angle = (i/DISTRICTS.length) * Math.PI*2 + 0.4;
+  const r = 13 + (i%2)*5;
+  const x = Math.cos(angle)*r, z = Math.sin(angle)*r;
+
+  const { texture, aspect:ta } = makeTextTexture(d.sign, { fg:'#eaf5f2', size:65, weight:600 });
+  const h = 1.98, w = h*ta;
+  const spriteMat = new THREE.SpriteMaterial({ map:texture, transparent:true, depthWrite:false, depthTest:false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.position.set(x, 15.5 + Math.random()*1.6, z);
+  sprite.scale.set(w,h,1);
+  sprite.renderOrder = 999;
+  sprite.userData = { district:d, baseY: sprite.position.y, phase: Math.random()*Math.PI*2 };
+  placeholderGroup.add(sprite);
+
+  // generous invisible hit-target so it's easy to tap on mobile
+  const hitGeo = new THREE.SphereGeometry(2.4, 8, 8);
+  const hitMat = new THREE.MeshBasicMaterial({ visible:false });
+  const hit = new THREE.Mesh(hitGeo, hitMat);
+  hit.position.copy(sprite.position);
+  hit.userData = { district:d, sprite };
+  placeholderGroup.add(hit);
+  placeholderMeshes.push(hit);
+
+  // beacon ring on the ground beneath it
+  const ringGeo = new THREE.RingGeometry(0.55,0.7,32);
+  const ringMat = new THREE.MeshBasicMaterial({ color:0x6fe3d4, transparent:true, opacity:0.55, side:THREE.DoubleSide });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI/2;
+  ring.position.set(x, 0.02, z);
+  ring.userData = { phase: Math.random()*Math.PI*2 };
+  placeholderGroup.add(ring);
+  sprite.userData.ring = ring;
+});
+
+/* the CONTACT_ME sign lives as a fixed landmark at the far southern edge —
+   the very bottom of the map — rather than mixed in with the districts */
+{
+  const contactDistrict = DISTRICTS.find(d=>d.contact);
+  const x = 0, z = CITY_HALF - 5;
+  const { texture, aspect:ta } = makeTextTexture(contactDistrict.sign, { fg:'#eaf5f2', size:72, weight:700 });
+  const h = 2.22, w = h*ta;
+  const spriteMat = new THREE.SpriteMaterial({ map:texture, transparent:true, depthWrite:false, depthTest:false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.position.set(x, 15.5, z);
+  sprite.scale.set(w,h,1);
+  sprite.renderOrder = 999;
+  sprite.userData = { district: contactDistrict, baseY: sprite.position.y, phase: Math.random()*Math.PI*2 };
+  placeholderGroup.add(sprite);
+
+  const hitGeo = new THREE.SphereGeometry(2.64, 8, 8);
+  const hitMat = new THREE.MeshBasicMaterial({ visible:false });
+  const hit = new THREE.Mesh(hitGeo, hitMat);
+  hit.position.copy(sprite.position);
+  hit.userData = { district: contactDistrict, sprite };
+  placeholderGroup.add(hit);
+  placeholderMeshes.push(hit);
+
+  const ringGeo = new THREE.RingGeometry(0.6,0.78,32);
+  const ringMat = new THREE.MeshBasicMaterial({ color:0x6fe3d4, transparent:true, opacity:0.6, side:THREE.DoubleSide });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI/2;
+  ring.position.set(x, 0.02, z);
+  ring.userData = { phase: Math.random()*Math.PI*2 };
+  placeholderGroup.add(ring);
+  sprite.userData.ring = ring;
+}
+
+/* =========================================================================
+   BOOT SEQUENCE
+   ========================================================================= */
+const bootLines = [
+  'ALLOCATING ASCII BUFFERS...',
+  'COMPILING CITYSCAPE... [OK]',
+  'WORLD ONLINE.'
+];
+const bootLog = document.getElementById('bootLog');
+const bootEl = document.getElementById('boot');
+const hud = document.getElementById('hud');
+const hint = document.getElementById('hint');
+
+let bootDone = false, assembleStart = 0;
+
+function runBoot(){
+  let i = 0;
+  const cursor = bootLog.querySelector('.cursor');
+  function next(){
+    if(i < bootLines.length){
+      const line = document.createElement('div');
+      bootLog.insertBefore(line, cursor);
+      let c = 0;
+      const t = setInterval(()=>{
+        c += 2; // two characters per tick — faster typing, still readable
+        line.textContent = bootLines[i].slice(0, c);
+        if(c >= bootLines[i].length){ clearInterval(t); i++; setTimeout(next, 30); }
+      }, 4);
+    } else {
+      setTimeout(()=>{
+        bootEl.style.opacity = '0';
+        setTimeout(()=> bootEl.style.display='none', 400);
+        hud.classList.add('visible');
+        assembleStart = performance.now();
+        bootDone = true;
+        hintFadeTimer = setTimeout(()=>{ hint.style.opacity = '0'; }, 4500);
+      }, 100);
+    }
+  }
+  next();
+}
+runBoot();
+
+/* =========================================================================
+   CONTROLS — pointer drag to pan, arrow/WASD keys, wheel + pinch to zoom
+   ========================================================================= */
+let hintFadeTimer = null;
+
+const keys = new Set();
+window.addEventListener('keydown', e=>{
+  const k = e.key.toLowerCase();
+  if(k === 'q' && !keys.has('q')) rotateView(-1);
+  if(k === 'e' && !keys.has('e')) rotateView(1);
+  keys.add(k);
+});
+window.addEventListener('keyup', e=>{ keys.delete(e.key.toLowerCase()); });
+
+const activePointers = new Map();
+let dragging = false, dragMoved = false, lastX=0, lastY=0, downX=0, downY=0, downT=0;
+let pinchStartDist = 0, pinchStartZoom = 1;
+
+function getPointerDist(){
+  const pts = [...activePointers.values()];
+  if(pts.length < 2) return 0;
+  return Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+}
+
+// look sensitivity for POV drag — tuned so a full-width swipe is roughly
+// a 180° turn, which feels natural on both touch and mouse
+const LOOK_SENS = Math.PI / Math.max(560, window.innerWidth * 1.6);
+
+container.addEventListener('pointerdown', e=>{
+  container.setPointerCapture(e.pointerId);
+  activePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  if(activePointers.size === 1){
+    dragging = true; dragMoved = false;
+    lastX = downX = e.clientX; lastY = downY = e.clientY; downT = performance.now();
+    container.classList.add('dragging');
+  } else if(activePointers.size === 2 && !povActive){
+    pinchStartDist = getPointerDist(); pinchStartZoom = camZoom;
+  }
+});
+
+container.addEventListener('pointermove', e=>{
+  if(!activePointers.has(e.pointerId)) { if(!povActive) handleHover(e); return; }
+  activePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+
+  if(activePointers.size === 2 && !povActive){
+    const dist = getPointerDist();
+    if(pinchStartDist > 0){
+      camZoomTarget = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, pinchStartZoom * (dist/pinchStartDist)));
+    }
+    return;
+  }
+  if(dragging){
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    if(Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY) > 6) dragMoved = true;
+    if(povActive){
+      // first-person look: drag right to turn right, drag up to look up —
+      // the same gesture used in nearly every mobile/touch 3D game
+      povYawTarget -= dx * LOOK_SENS;
+      povPitchTarget = Math.max(-POV_PITCH_LIMIT, Math.min(POV_PITCH_LIMIT, povPitchTarget - dy * LOOK_SENS));
+    } else if(dragMoved){
+      const speed = 0.028 / camZoom;
+      rig.position.addScaledVector(RIGHT, -dx*speed);
+      rig.position.addScaledVector(FORWARD, dy*speed);
+      clampRig();
+    }
+    lastX = e.clientX; lastY = e.clientY;
+  } else if(!povActive){
+    handleHover(e);
+  }
+});
+
+function endPointer(e){
+  activePointers.delete(e.pointerId);
+  if(activePointers.size === 0){
+    container.classList.remove('dragging');
+    if(dragging && !dragMoved && performance.now()-downT < 500){
+      if(povActive) handleTapPov(); else handleTap(downX, downY);
+    }
+    dragging = false;
+  }
+}
+container.addEventListener('pointerup', endPointer);
+container.addEventListener('pointercancel', endPointer);
+
+document.getElementById('rotateLeftBtn').addEventListener('click', ()=> rotateView(-1));
+document.getElementById('rotateRightBtn').addEventListener('click', ()=> rotateView(1));
+
+const povToggleBtn = document.getElementById('povToggleBtn');
+const crosshairEl = document.getElementById('crosshair');
+povToggleBtn.addEventListener('click', togglePov);
+window.addEventListener('keydown', e=>{
+  if(e.key.toLowerCase() === 'p' && !e.repeat) togglePov();
+});
+
+const screenshotBtn = document.getElementById('screenshotBtn');
+const captureFlash = document.getElementById('captureFlash');
+const captureToast = document.getElementById('captureToast');
+let toastTimer = null;
+
+function takeScreenshot(){
+  renderer.render(scene, camera); // force one fresh frame right before reading pixels
+  captureFlash.classList.add('flash');
+  requestAnimationFrame(()=>{ captureFlash.classList.remove('flash'); });
+
+  renderer.domElement.toBlob(async (blob)=>{
+    if(!blob) return;
+    const stamp = new Date().toISOString().replace(/[:.]/g,'-');
+    const filename = `matrix-city-pov-${stamp}.png`;
+    let done = false, label = 'SAVED';
+
+    // best path on iPhone/iPad — hands the image to the native share sheet,
+    // which has a direct "Save Image" (to Photos) option. Anchor-tag
+    // downloads are unreliable in iOS Safari, so this is tried first there.
+    if(navigator.canShare && navigator.share){
+      try{
+        const file = new File([blob], filename, { type:'image/png' });
+        if(navigator.canShare({ files:[file] })){
+          await navigator.share({ files:[file], title:'Matrix City — POV' });
+          done = true; label = 'SHARED';
+        }
+      } catch(err){ /* cancelled or unsupported mid-call — fall through */ }
+    }
+
+    if(!done){
+      const url = URL.createObjectURL(blob);
+      const isiOS = /iP(hone|ad|od)/.test(navigator.userAgent);
+      if(isiOS){
+        // Safari ignores the download attribute for most sources — opening
+        // the image directly lets the user long-press → Save to Photos
+        window.open(url, '_blank');
+      } else {
+        const link = document.createElement('a');
+        link.href = url; link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      setTimeout(()=> URL.revokeObjectURL(url), 30000);
+    }
+
+    captureToast.textContent = label;
+    captureToast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=> captureToast.classList.remove('show'), 1400);
+  }, 'image/png');
+}
+screenshotBtn.addEventListener('click', takeScreenshot);
+
+container.addEventListener('wheel', e=>{
+  e.preventDefault();
+  if(povActive){
+    // in POV, the wheel acts as a light zoom lens instead of an ortho zoom
+    povCamera.fov = Math.min(85, Math.max(35, povCamera.fov + e.deltaY*0.02));
+    povCamera.updateProjectionMatrix();
+    return;
+  }
+  camZoomTarget = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, camZoomTarget - e.deltaY*0.0016));
+}, { passive:false });
+
+function clampRig(){
+  rig.position.x = Math.max(-CITY_HALF, Math.min(CITY_HALF, rig.position.x));
+  rig.position.z = Math.max(-CITY_HALF, Math.min(CITY_HALF, rig.position.z));
+}
+
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const CENTER_NDC = new THREE.Vector2(0,0); // reused for POV crosshair raycasts
+
+function toNDC(x,y){
+  const rect = renderer.domElement.getBoundingClientRect();
+  ndc.x = ((x-rect.left)/rect.width)*2 - 1;
+  ndc.y = -(((y-rect.top)/rect.height)*2 - 1);
+  return ndc;
+}
+
+let hovered = null;
+function handleHover(e){
+  raycaster.setFromCamera(toNDC(e.clientX,e.clientY), camera);
+  const hits = raycaster.intersectObjects(placeholderMeshes);
+  if(hits.length){
+    if(hovered !== hits[0].object){ hovered = hits[0].object; }
+    container.classList.add('hoverable');
+  } else {
+    hovered = null;
+    container.classList.remove('hoverable');
+  }
+}
+
+function handleTap(x,y){
+  raycaster.setFromCamera(toNDC(x,y), camera);
+  const hits = raycaster.intersectObjects(placeholderMeshes);
+  if(hits.length){
+    openPanel(hits[0].object.userData.district, x, y);
+  }
+}
+
+// POV taps always aim from the screen centre (the crosshair) rather than
+// the tap point, since a short tap is how you "select" while look-dragging
+function handleTapPov(){
+  raycaster.setFromCamera(CENTER_NDC, povCamera);
+  const hits = raycaster.intersectObjects(placeholderMeshes);
+  if(hits.length){
+    openPanel(hits[0].object.userData.district, window.innerWidth/2, window.innerHeight/2);
+  }
+}
+
+/* ---------- on-screen movement thumbstick (POV mode, touch + mouse) ---------- */
+const joystickEl = document.getElementById('joystick');
+const joystickThumb = document.getElementById('joystickThumb');
+let joystickActive = false, joystickPointerId = null, joystickX = 0, joystickY = 0;
+const JOY_RADIUS = 40;
+
+function joystickSet(clientX, clientY){
+  const rect = joystickEl.getBoundingClientRect();
+  const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+  let dx = clientX - cx, dy = clientY - cy;
+  const dist = Math.hypot(dx, dy);
+  if(dist > JOY_RADIUS){ dx = dx/dist*JOY_RADIUS; dy = dy/dist*JOY_RADIUS; }
+  joystickThumb.style.transform = `translate(${dx-22}px, ${dy-22}px)`;
+  joystickX = dx / JOY_RADIUS; // -1..1 strafe
+  joystickY = dy / JOY_RADIUS; // -1..1 forward(-)/back(+)
+}
+function joystickReset(){
+  joystickActive = false; joystickPointerId = null; joystickX = 0; joystickY = 0;
+  joystickThumb.style.transform = 'translate(-50%,-50%)';
+}
+joystickEl.addEventListener('pointerdown', e=>{
+  e.stopPropagation();
+  joystickEl.setPointerCapture(e.pointerId);
+  joystickActive = true; joystickPointerId = e.pointerId;
+  joystickSet(e.clientX, e.clientY);
+});
+joystickEl.addEventListener('pointermove', e=>{
+  if(!joystickActive || e.pointerId !== joystickPointerId) return;
+  e.stopPropagation();
+  joystickSet(e.clientX, e.clientY);
+});
+function joystickEnd(e){
+  if(e.pointerId !== joystickPointerId) return;
+  e.stopPropagation();
+  joystickReset();
+}
+joystickEl.addEventListener('pointerup', joystickEnd);
+joystickEl.addEventListener('pointercancel', joystickEnd);
+
+/* =========================================================================
+   PANEL — grows from the exact screen point that was tapped
+   ========================================================================= */
+const panel = document.getElementById('panel');
+const panelTitle = document.getElementById('panelTitle');
+const panelTagline = document.getElementById('panelTagline');
+const panelBody = document.getElementById('panelBody');
+const panelTags = document.getElementById('panelTags');
+const panelFields = document.getElementById('panelFields');
+const panelClose = document.getElementById('panelClose');
+
+const panelGallery = document.getElementById('panelGallery');
+const galleryImg = document.getElementById('galleryImg');
+const galleryExpand = document.getElementById('galleryExpand');
+const galleryPrev = document.getElementById('galleryPrev');
+const galleryNext = document.getElementById('galleryNext');
+const galleryDots = document.getElementById('galleryDots');
+
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightboxImg');
+const lightboxClose = document.getElementById('lightboxClose');
+const lightboxPrev = document.getElementById('lightboxPrev');
+const lightboxNext = document.getElementById('lightboxNext');
+const lightboxCounter = document.getElementById('lightboxCounter');
+
+function scrambleInto(el, text, duration=650){
+  const chars = '!<>-_\\/[]{}=+*^?#01';
+  const len = text.length;
+  let start = null;
+  el.textContent = '';
+  function frame(ts){
+    if(start===null) start = ts;
+    const p = Math.min((ts-start)/duration, 1);
+    const reveal = Math.floor(p*len);
+    let out = '';
+    for(let i=0;i<len;i++){
+      if(i < reveal || text[i] === ' ') out += text[i];
+      else out += chars[(Math.random()*chars.length)|0];
+    }
+    el.textContent = out;
+    if(p < 1) requestAnimationFrame(frame);
+    else el.textContent = text;
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- flip-through gallery controller ---------- */
+let galleryImages = [];
+let galleryIndex = 0;
+let galleryFlipToken = 0; // invalidates any in-flight flip when a newer one starts
+
+// keep loaded images warm so flipping to them is instant and doesn't
+// pop/flash while the browser fetches+decodes the file mid-animation
+const imageCache = new Map();
+function preloadImage(url){
+  if(!url || imageCache.has(url)) return Promise.resolve();
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=> resolve();
+    img.onerror = ()=> resolve();
+    img.src = url;
+    imageCache.set(url, img);
+  });
+}
+function preloadNeighbors(i){
+  if(!galleryImages.length) return;
+  const n = galleryImages.length;
+  preloadImage(galleryImages[i]);
+  preloadImage(galleryImages[(i+1)%n]);
+  preloadImage(galleryImages[(i-1+n)%n]);
+}
+// warm the rest of the set quietly in the background, a couple frames apart
+function preloadRestLazily(){
+  const list = galleryImages.slice();
+  let k = 0;
+  function step(){
+    if(k >= list.length) return;
+    preloadImage(list[k]);
+    k++;
+    setTimeout(step, 60);
+  }
+  step();
+}
+
+function renderGalleryDots(){
+  galleryDots.innerHTML = '';
+  galleryImages.forEach((_, i)=>{
+    const dot = document.createElement('span');
+    if(i === galleryIndex) dot.classList.add('active');
+    dot.addEventListener('click', ()=> goToSlide(i));
+    galleryDots.appendChild(dot);
+  });
+}
+
+const GALLERY_EASE = 'cubic-bezier(.22,1,.36,1)'; // modern "ease-out-expo"-ish curve
+const GALLERY_SLIDE_PX = 14; // subtle, not a big swipe-across-the-screen slide
+
+function goToSlide(i, instant=false){
+  const dir = ((i - galleryIndex + galleryImages.length*3) % galleryImages.length) <= galleryImages.length/2 ? 1 : -1;
+  galleryIndex = (i + galleryImages.length) % galleryImages.length;
+  const targetSrc = galleryImages[galleryIndex];
+  const token = ++galleryFlipToken;
+
+  [...galleryDots.children].forEach((dot,i2)=> dot.classList.toggle('active', i2===galleryIndex));
+  updateLightboxIfOpen();
+  preloadNeighbors(galleryIndex);
+
+  if(instant){
+    galleryImg.style.transition = 'none';
+    galleryImg.style.transform = 'none';
+    galleryImg.style.opacity = '1';
+    galleryImg.src = targetSrc;
+    return;
+  }
+
+  // wait for the incoming frame to actually be decoded before swapping to
+  // it, so the crossfade never lands on a blank/half-loaded image
+  preloadImage(targetSrc).then(()=>{
+    if(token !== galleryFlipToken) return; // a newer transition took over
+
+    // current image gently fades out and drifts out in the travel direction
+    galleryImg.style.transition = `opacity .22s ease, transform .22s ${GALLERY_EASE}`;
+    galleryImg.style.opacity = '0';
+    galleryImg.style.transform = `translateX(${dir*-GALLERY_SLIDE_PX}px)`;
+
+    setTimeout(()=>{
+      if(token !== galleryFlipToken) return;
+      // swap the frame while it's invisible, positioned on the entry side...
+      galleryImg.src = targetSrc;
+      galleryImg.style.transition = 'none';
+      galleryImg.style.transform = `translateX(${dir*GALLERY_SLIDE_PX}px)`;
+      // ...then let it settle into place with a fade + slide in
+      requestAnimationFrame(()=>{
+        requestAnimationFrame(()=>{
+          if(token !== galleryFlipToken) return;
+          galleryImg.style.transition = `opacity .28s ease, transform .28s ${GALLERY_EASE}`;
+          galleryImg.style.opacity = '1';
+          galleryImg.style.transform = 'translateX(0)';
+        });
+      });
+    }, 220);
+  });
+}
+
+galleryPrev.addEventListener('click', ()=> goToSlide(galleryIndex-1));
+galleryNext.addEventListener('click', ()=> goToSlide(galleryIndex+1));
+
+// swipe support on the gallery frame
+let galSwipeX = null;
+let gallerySwiped = false;
+const galleryFrame = document.getElementById('galleryFrame');
+galleryFrame.addEventListener('pointerdown', e=>{ galSwipeX = e.clientX; gallerySwiped = false; });
+galleryFrame.addEventListener('pointerup', e=>{
+  if(galSwipeX===null) return;
+  const dx = e.clientX - galSwipeX;
+  if(Math.abs(dx) > 40){ gallerySwiped = true; goToSlide(galleryIndex + (dx<0 ? 1 : -1)); }
+  galSwipeX = null;
+});
+
+/* ---------- fullscreen lightbox ---------- */
+function updateLightboxIfOpen(){
+  if(!lightbox.classList.contains('open')) return;
+  lightboxImg.src = galleryImages[galleryIndex];
+  lightboxCounter.textContent = `${galleryIndex+1} / ${galleryImages.length}`;
+}
+function openLightbox(){
+  if(!galleryImages.length) return;
+  lightboxImg.src = galleryImages[galleryIndex];
+  lightboxCounter.textContent = `${galleryIndex+1} / ${galleryImages.length}`;
+  lightbox.classList.add('open');
+}
+function closeLightbox(){
+  lightbox.classList.remove('open');
+}
+galleryImg.addEventListener('click', ()=>{ if(!gallerySwiped) openLightbox(); });
+galleryExpand.addEventListener('click', openLightbox);
+lightboxClose.addEventListener('click', closeLightbox);
+lightbox.addEventListener('click', e=>{ if(e.target === lightbox) closeLightbox(); });
+lightboxPrev.addEventListener('click', e=>{ e.stopPropagation(); goToSlide(galleryIndex-1, true); updateLightboxIfOpen(); });
+lightboxNext.addEventListener('click', e=>{ e.stopPropagation(); goToSlide(galleryIndex+1, true); updateLightboxIfOpen(); });
+
+window.addEventListener('keydown', e=>{
+  if(!lightbox.classList.contains('open')) return;
+  if(e.key === 'Escape') closeLightbox();
+  else if(e.key === 'ArrowRight'){ goToSlide(galleryIndex+1, true); updateLightboxIfOpen(); }
+  else if(e.key === 'ArrowLeft'){ goToSlide(galleryIndex-1, true); updateLightboxIfOpen(); }
+});
+
+// swipe support in the lightbox
+let lbSwipeX = null;
+lightbox.addEventListener('pointerdown', e=>{ lbSwipeX = e.clientX; });
+lightbox.addEventListener('pointerup', e=>{
+  if(lbSwipeX===null) return;
+  const dx = e.clientX - lbSwipeX;
+  if(Math.abs(dx) > 40){
+    goToSlide(galleryIndex + (dx<0 ? 1 : -1), true);
+    updateLightboxIfOpen();
+  }
+  lbSwipeX = null;
+});
+
+function openPanel(d, x, y){
+  panel.style.clipPath = `circle(0% at ${x}px ${y}px)`;
+  panel.style.webkitClipPath = `circle(0% at ${x}px ${y}px)`;
+  panelBody.classList.remove('show');
+
+  panelTags.innerHTML = '';
+  d.tags.forEach(t=>{ const s=document.createElement('span'); s.textContent=t; panelTags.appendChild(s); });
+
+  if(d.images && d.images.length){
+    galleryImages = d.images;
+    goToSlide(0, true);
+    renderGalleryDots();
+    panelGallery.classList.add('show');
+    preloadRestLazily();
+  } else {
+    panelGallery.classList.remove('show');
+    galleryImages = [];
+  }
+
+  panelBody.textContent = d.body || '';
+
+  panelFields.innerHTML = '';
+  if(d.fields && d.fields.length){
+    d.fields.forEach(f=>{
+      const row = document.createElement('div'); row.className = 'fieldRow';
+      const l = document.createElement('span'); l.className = 'fieldLabel'; l.textContent = f.label;
+      const v = document.createElement('span'); v.className = 'fieldValue'; v.textContent = f.value;
+      row.appendChild(l); row.appendChild(v);
+      panelFields.appendChild(row);
+    });
+    panelFields.classList.add('show');
+  } else {
+    panelFields.classList.remove('show');
+  }
+
+  requestAnimationFrame(()=>{
+    panel.classList.add('open');
+    panel.style.clipPath = `circle(150% at ${x}px ${y}px)`;
+    panel.style.webkitClipPath = `circle(150% at ${x}px ${y}px)`;
+  });
+
+  scrambleInto(panelTitle, d.title, 550);
+  setTimeout(()=> scrambleInto(panelTagline, d.tagline, 500), 220);
+  setTimeout(()=> panelBody.classList.add('show'), 500);
+}
+
+function closePanel(x, y){
+  panel.style.clipPath = `circle(0% at ${x}px ${y}px)`;
+  panel.style.webkitClipPath = `circle(0% at ${x}px ${y}px)`;
+  setTimeout(()=> panel.classList.remove('open'), 950);
+  closeLightbox();
+}
+
+panelClose.addEventListener('click', ()=>{
+  const r = panelClose.getBoundingClientRect();
+  closePanel(r.left, r.top);
+});
+
+/* =========================================================================
+   NIGHT — the world is locked permanently to its night-time look (the
+   sky/day toggle and its lerp machinery have been removed).
+   ========================================================================= */
+let rainGroupOpacityMul = 1;
+
+const clock = new THREE.Clock();
+const dummy = new THREE.Object3D();
+const cxEl = document.getElementById('cx'), czEl = document.getElementById('cz');
+
+function easeOutBack(t){ const c=1.6; return 1+c*Math.pow(t-1,3)+c*Math.pow(t-1,2); }
+
+function updateAssembly(elapsed){
+  let stillGrowing = false;
+  for(const b of buildingData){
+    const t = (elapsed - b.delay);
+    if(t <= 0){ stillGrowing = true; continue; }
+    const p = Math.min(t/0.4, 1);
+    if(p < 1) stillGrowing = true;
+    const scaleY = Math.max(0.001, easeOutBack(p) * b.h);
+    dummy.position.set(b.x, 0, b.z);
+    dummy.scale.set(b.w, scaleY, b.d);
+    dummy.updateMatrix();
+    b.mesh.setMatrixAt(b.idx, dummy.matrix);
+    b.edge.scale.set(b.w, scaleY, b.d);
+    if(b.roof){
+      if(p > 0.85){
+        b.roof.visible = true;
+        b.roof.position.y = scaleY + (b.roof.geometry.parameters.height||0.4)/2;
+      } else {
+        b.roof.visible = false;
+      }
+    }
+  }
+  buildingMeshes.forEach(m=> m.instanceMatrix.needsUpdate = true);
+
+  for(const sb of specialBuildings){
+    const t = (elapsed - sb.delay);
+    if(t <= 0){ stillGrowing = true; continue; }
+    const p = Math.min(t/0.4, 1);
+    if(p < 1) stillGrowing = true;
+    const s = Math.max(0.001, easeOutBack(p));
+    sb.group.scale.set(s,s,s);
+  }
+
+  return stillGrowing;
+}
+
+let assembling = false;
+let edgesMerged = false;
+const mergedEdgeMeshes = []; // filled in once, replaces per-building edge draw calls
+
+function mergeBuildingEdges(){
+  const localPos = edgeGeo.attributes.position.array; // unit-box edge vertices, pivot at base
+  const vertCount = localPos.length / 3;
+
+  const byVariant = edgeTints.map(()=> []);
+  for(const b of buildingData) byVariant[b.variant].push(b);
+
+  edgeTints.forEach((tint, variant)=>{
+    const group = byVariant[variant];
+    if(!group.length) return;
+    const positions = new Float32Array(group.length * vertCount * 3);
+    let o = 0;
+    for(const b of group){
+      for(let i=0;i<vertCount;i++){
+        positions[o++] = localPos[i*3]   * b.w + b.x;
+        positions[o++] = localPos[i*3+1] * b.h;
+        positions[o++] = localPos[i*3+2] * b.d + b.z;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.LineBasicMaterial({ color: tint, transparent:true, opacity:0.55 });
+    const merged = new THREE.LineSegments(geo, mat);
+    scene.add(merged);
+    mergedEdgeMeshes.push(merged);
+  });
+
+  // the per-building edges are now redundant — remove them from the scene
+  // (this is what was costing ~250 extra draw calls)
+  for(const b of buildingData){ scene.remove(b.edge); b.edge.geometry.dispose?.(); b.edge = null; }
+  edgesMerged = true;
+}
+
+let facesMerged = false;
+const mergedFaceMeshes = [];
+
+function mergeBuildingFaces(){
+  // start from a single correctly-wound unit box (pivot at base) and expand
+  // it to individual triangles so per-vertex face/UV data is easy to reuse
+  const unitBox = new THREE.BoxGeometry(1,1,1).translate(0,0.5,0).toNonIndexed();
+  const uPos = unitBox.attributes.position.array;
+  const uNorm = unitBox.attributes.normal.array;
+  const uUv = unitBox.attributes.uv.array;
+  const vertCount = uPos.length / 3;
+  const triCount = vertCount / 3;
+
+  // classify each triangle as "cap" (top/bottom, normal.y dominant) or
+  // "wall" (side, gets the window facade), then collapse into contiguous
+  // vertex ranges so each building only needs a couple of geometry groups
+  // rather than one per triangle — this is what keeps rooftops looking like
+  // flat roofs instead of more windows facing straight up at the sky.
+  const faceRanges = [];
+  {
+    let start = 0, cur = Math.abs(uNorm[1]) > 0.5;
+    for(let ti=1; ti<=triCount; ti++){
+      const isCap = ti < triCount ? Math.abs(uNorm[ti*9+1]) > 0.5 : !cur;
+      if(ti === triCount || isCap !== cur){
+        faceRanges.push({ startVert: start*3, count: (ti-start)*3, isCap: cur });
+        start = ti;
+        cur = isCap;
+      }
+    }
+  }
+
+  const byVariant = buildingTexVariants.map(()=> []);
+  for(const b of buildingData) byVariant[b.variant].push(b);
+
+  buildingTexVariants.forEach((tex, variant)=>{
+    const group = byVariant[variant];
+    if(!group.length) return;
+    const positions = new Float32Array(group.length * vertCount * 3);
+    const normals   = new Float32Array(group.length * vertCount * 3);
+    const uvs       = new Float32Array(group.length * vertCount * 2);
+    let po=0, no=0, uo=0;
+    for(const b of group){
+      for(let i=0;i<vertCount;i++){
+        const nx = uNorm[i*3], ny = uNorm[i*3+1], nz = uNorm[i*3+2];
+        positions[po++] = uPos[i*3]   * b.w + b.x;
+        positions[po++] = uPos[i*3+1] * b.h;
+        positions[po++] = uPos[i*3+2] * b.d + b.z;
+        normals[no++] = nx; normals[no++] = ny; normals[no++] = nz;
+
+        const baseU = uUv[i*2], baseV = uUv[i*2+1];
+        let uRep, vRep;
+        if(Math.abs(nx) > 0.5){        // +/-X faces: span depth × height
+          uRep = b.d / TEX_UNIT_U; vRep = b.h / TEX_UNIT_V;
+        } else if(Math.abs(nz) > 0.5){ // +/-Z faces: span width × height
+          uRep = b.w / TEX_UNIT_U; vRep = b.h / TEX_UNIT_V;
+        } else {                       // top/bottom: span width × depth
+          uRep = b.w / TEX_UNIT_U; vRep = b.d / TEX_UNIT_U;
+        }
+        uvs[uo++] = baseU * uRep;
+        uvs[uo++] = baseV * vRep;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+
+    // one pair of groups per building (wall range + cap range), pointing at
+    // material index 0 (window facade) or 1 (flat roof)
+    for(let bi=0; bi<group.length; bi++){
+      const base = bi * vertCount;
+      for(const r of faceRanges){
+        geo.addGroup(base + r.startVert, r.count, r.isCap ? 1 : 0);
+      }
+    }
+
+    const windowMat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff });
+    const merged = new THREE.Mesh(geo, [windowMat, capMat]);
+    scene.add(merged);
+    mergedFaceMeshes.push(merged);
+  });
+
+  // the instanced boxes are now fully replaced — hide them rather than
+  // dispose, since their materials/textures are shared with the merged mesh
+  for(const m of buildingMeshes){ m.visible = false; }
+  facesMerged = true;
+}
+
+/* =========================================================================
+   SKY TRAFFIC — a small airliner and a lone craft occasionally cross high
+   above the skyline. Each has its own random cooldown so sightings stay
+   rare and unscripted rather than looping on a fixed timer.
+   ========================================================================= */
+function createAirplane(tint){
+  const group = new THREE.Group();
+  const hullMat = new THREE.MeshBasicMaterial({ color: 0x12181c });
+  const trimMat = new THREE.LineBasicMaterial({ color: tint, transparent:true, opacity:0.6 });
+
+  const fuseGeo = new THREE.BoxGeometry(0.3, 0.3, 2.6);
+  const fuselage = new THREE.Mesh(fuseGeo, hullMat);
+  group.add(fuselage);
+  group.add(new THREE.LineSegments(new THREE.EdgesGeometry(fuseGeo), trimMat));
+
+  const noseGeo = new THREE.ConeGeometry(0.15, 0.55, 6);
+  const nose = new THREE.Mesh(noseGeo, hullMat);
+  nose.rotation.x = -Math.PI/2;
+  nose.position.z = -1.58;
+  group.add(nose);
+  const noseEdge = new THREE.LineSegments(new THREE.EdgesGeometry(noseGeo), trimMat);
+  noseEdge.rotation.x = -Math.PI/2; noseEdge.position.copy(nose.position);
+  group.add(noseEdge);
+
+  const wingGeo = new THREE.BoxGeometry(2.6, 0.06, 0.55);
+  const wing = new THREE.Mesh(wingGeo, hullMat);
+  wing.position.set(0, -0.02, 0.15);
+  group.add(wing);
+  const wingEdge = new THREE.LineSegments(new THREE.EdgesGeometry(wingGeo), trimMat);
+  wingEdge.position.copy(wing.position);
+  group.add(wingEdge);
+
+  const tailWingGeo = new THREE.BoxGeometry(0.95, 0.05, 0.34);
+  const tailWing = new THREE.Mesh(tailWingGeo, hullMat);
+  tailWing.position.set(0, 0.06, 1.1);
+  group.add(tailWing);
+  const tailWingEdge = new THREE.LineSegments(new THREE.EdgesGeometry(tailWingGeo), trimMat);
+  tailWingEdge.position.copy(tailWing.position);
+  group.add(tailWingEdge);
+
+  const finGeo = new THREE.BoxGeometry(0.05, 0.44, 0.36);
+  const fin = new THREE.Mesh(finGeo, hullMat);
+  fin.position.set(0, 0.3, 1.15);
+  group.add(fin);
+  const finEdge = new THREE.LineSegments(new THREE.EdgesGeometry(finGeo), trimMat);
+  finEdge.position.copy(fin.position);
+  group.add(finEdge);
+
+  const tipGeo = new THREE.BoxGeometry(0.07,0.07,0.07);
+  const lightL = new THREE.Mesh(tipGeo, new THREE.MeshBasicMaterial({ color: tint }));
+  lightL.position.set(1.28, -0.02, 0.15);
+  group.add(lightL);
+  const lightR = new THREE.Mesh(tipGeo, new THREE.MeshBasicMaterial({ color: tint }));
+  lightR.position.set(-1.28, -0.02, 0.15);
+  group.add(lightR);
+
+  const beacon = new THREE.Mesh(tipGeo, new THREE.MeshBasicMaterial({ color: 0xeaf5f2, transparent:true, opacity:1 }));
+  beacon.position.set(0, 0.18, -0.4);
+  group.add(beacon);
+  group.userData.beacon = beacon;
+
+  group.scale.setScalar(1.6);
+  return group;
+}
+
+function createSpaceship(tint){
+  const group = new THREE.Group();
+  const hullMat = new THREE.MeshBasicMaterial({ color: 0x0b1013 });
+  const trimMat = new THREE.LineBasicMaterial({ color: tint, transparent:true, opacity:0.7 });
+
+  const hullGeo = new THREE.CylinderGeometry(1.05, 1.35, 0.34, 10);
+  const hull = new THREE.Mesh(hullGeo, hullMat);
+  group.add(hull);
+  group.add(new THREE.LineSegments(new THREE.EdgesGeometry(hullGeo), trimMat));
+
+  const domeGeo = new THREE.CylinderGeometry(0.42, 0.72, 0.42, 8);
+  const dome = new THREE.Mesh(domeGeo, hullMat);
+  dome.position.y = 0.36;
+  group.add(dome);
+  const domeEdge = new THREE.LineSegments(new THREE.EdgesGeometry(domeGeo), trimMat);
+  domeEdge.position.copy(dome.position);
+  group.add(domeEdge);
+
+  const ringGeo = new THREE.RingGeometry(0.5, 0.64, 24);
+  const ringMat = new THREE.MeshBasicMaterial({ color: tint, transparent:true, opacity:0.55, side:THREE.DoubleSide });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI/2;
+  ring.position.y = -0.19;
+  group.add(ring);
+  group.userData.ring = ring;
+
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent:true, opacity:0.5, depthWrite:false }));
+  glow.scale.setScalar(2.6);
+  glow.position.y = -0.2;
+  group.add(glow);
+  group.userData.glow = glow;
+
+  group.scale.setScalar(1.5);
+  return group;
+}
+
+const skyCraft = [
+  { mesh: createAirplane(edgeTints[3]), kind:'plane', altitude:30, speed:8.5,  minWait:16, maxWait:40 },
+  { mesh: createSpaceship(edgeTints[0]), kind:'ship',  altitude:38, speed:4.2,  minWait:55, maxWait:120 }
+];
+
+for(const craft of skyCraft){
+  craft.mesh.visible = false;
+  scene.add(craft.mesh);
+  craft.flying = false;
+  craft.elapsed = 0;
+  craft.duration = 1;
+  craft.start = new THREE.Vector3();
+  craft.end = new THREE.Vector3();
+  craft.timer = craft.minWait + Math.random()*(craft.maxWait - craft.minWait);
+}
+
+function launchCraft(craft){
+  const angle = Math.random()*Math.PI*2;
+  const dir = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
+  const span = 55 + Math.random()*15;
+  const cx = rig.position.x + (Math.random()-0.5)*14;
+  const cz = rig.position.z + (Math.random()-0.5)*14;
+  craft.start.set(cx - dir.x*span, craft.altitude, cz - dir.z*span);
+  craft.end.set(cx + dir.x*span, craft.altitude, cz + dir.z*span);
+  craft.mesh.position.copy(craft.start);
+  craft.mesh.lookAt(craft.end);
+  craft.mesh.rotateY(Math.PI);
+  craft.mesh.visible = true;
+  craft.flying = true;
+  craft.elapsed = 0;
+  craft.duration = craft.start.distanceTo(craft.end) / craft.speed;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  if(bootDone){
+    if(!assembling){ assembling = true; }
+    const elapsed = (performance.now() - assembleStart)/1000;
+    if(elapsed < 0.9) updateAssembly(elapsed);
+    else if(!edgesMerged) mergeBuildingEdges();
+    else if(!facesMerged) mergeBuildingFaces();
+
+    if(povActive){
+      // gather input as a single -1..1 vector so keys and the analog
+      // joystick both drive speed proportionally (partial stick push = a
+      // slower walk, full push = a run) instead of snapping to one speed
+      let inX = 0, inY = 0;
+      if(keys.has('w')||keys.has('arrowup'))    inY += 1;
+      if(keys.has('s')||keys.has('arrowdown'))  inY -= 1;
+      if(keys.has('a')||keys.has('arrowleft'))  inX -= 1;
+      if(keys.has('d')||keys.has('arrowright')) inX += 1;
+      if(joystickActive){
+        if(Math.abs(joystickX) > 0.12) inX += joystickX;
+        if(Math.abs(joystickY) > 0.12) inY += -joystickY;
+      }
+      const rawMag = Math.hypot(inX, inY);
+      if(rawMag > 1){ inX /= rawMag; inY /= rawMag; }
+      const mag = Math.min(1, rawMag);
+      const running = keys.has('shift') || rawMag > 0.94;
+      const maxSpeed = running ? 4.6 : 2.6;
+      const targetSpeed = mag * maxSpeed;
+
+      const accelEase = 1 - Math.pow(0.0012, dt || 0.016);
+      povSpeedCurrent += (targetSpeed - povSpeedCurrent) * accelEase;
+
+      if(mag > 0.001 && povSpeedCurrent > 0.02){
+        const dx = inX/mag, dy = inY/mag;
+        rig.position.addScaledVector(povForward, dy*povSpeedCurrent*dt);
+        rig.position.addScaledVector(povRight, dx*povSpeedCurrent*dt);
+        povWalkPhase += dt * (BOB_FREQ * (0.55 + 0.45*(povSpeedCurrent/maxSpeed)));
+      }
+      clampRig();
+      resolvePovCollisions();
+    } else {
+      // keyboard movement (isometric pan mode)
+      const speed = 9 * dt;
+      if(keys.has('w')||keys.has('arrowup'))    rig.position.addScaledVector(FORWARD, speed);
+      if(keys.has('s')||keys.has('arrowdown'))  rig.position.addScaledVector(FORWARD, -speed);
+      if(keys.has('a')||keys.has('arrowleft'))  rig.position.addScaledVector(RIGHT, -speed);
+      if(keys.has('d')||keys.has('arrowright')) rig.position.addScaledVector(RIGHT, speed);
+      clampRig();
+    }
+  }
+
+  if(povActive) updatePovCamera(dt); else updateCamera(dt);
+
+  // crosshair lights up when a sign is directly ahead, in reach, in POV mode
+  if(povActive){
+    raycaster.setFromCamera(CENTER_NDC, povCamera);
+    const hits = raycaster.intersectObjects(placeholderMeshes);
+    crosshairEl.classList.toggle('targeting', hits.length > 0 && hits[0].distance < 9);
+  }
+
+  // rain / floating particles
+  for(const s of rainSprites){
+    s.material.opacity = s.userData.baseOpacity * rainGroupOpacityMul;
+    if(s.userData.rising){
+      s.position.y += s.userData.speed*0.25*dt;
+      if(s.position.y > 22) s.position.y = 0;
+    } else {
+      s.position.y -= s.userData.speed*dt;
+      if(s.position.y < 0) s.position.y = 20 + Math.random()*4;
+    }
+  }
+
+  // traffic light indicators — tint each intersection marker by whichever
+  // direction currently has right of way
+  for(const e of trafficLightCoords){
+    const green = trafficHorizontalGreen(e.x, e.z, t);
+    const col = green ? TL_GREEN_H : TL_GREEN_V;
+    trafficLights.instanceColor.setXYZ(e.idx, col.r, col.g, col.b);
+  }
+  trafficLights.instanceColor.needsUpdate = true;
+
+  // cars drive continuously along their street and wrap at the city edge,
+  // easing to a stop at red lights and never getting stuck mid-intersection
+  const edge = CITY_HALF + 3;
+  for(const v of vehicles){
+    const u = v.userData;
+    const mul = intersectionSpeedMul(u.pos, u.dir, u.lane, u.horizontal, ROAD_HALF+0.15, ROAD_HALF+2.4, t);
+    u.pos += u.dir * u.speed * mul * dt;
+    if(u.pos > edge) u.pos = -edge;
+    if(u.pos < -edge) u.pos = edge;
+    if(u.horizontal) v.position.set(u.pos, 0, u.lane);
+    else v.position.set(u.lane, 0, u.pos);
+  }
+
+  // people standing on the sidewalks — a small idle weight-shift
+  for(const p of standingPeople){
+    const rig = p.userData.rig;
+    const sway = Math.sin(t*0.7 + p.userData.phase) * 0.06;
+    rig.armL.rotation.x = sway*0.4;
+    rig.armR.rotation.x = -sway*0.4;
+    p.position.y = Math.abs(Math.sin(t*0.7 + p.userData.phase))*0.004;
+  }
+
+  // people walking continuously along the sidewalk, with a proper gait
+  for(const p of walkingPeople){
+    const u = p.userData;
+    const mul = intersectionSpeedMul(u.pos, u.dir, u.lane, u.horizontal, ROAD_HALF+0.3, ROAD_HALF+1.5, t);
+    u.pos += u.dir * u.speed * mul * dt;
+    if(u.pos > edge) u.pos = -edge;
+    if(u.pos < -edge) u.pos = edge;
+    if(u.horizontal) p.position.set(u.pos, 0, u.lane);
+    else p.position.set(u.lane, 0, u.pos);
+
+    u.gaitTime = (u.gaitTime||0) + dt*7*mul; // gait pauses along with the pedestrian, not just visually slides
+    const stride = Math.sin(u.gaitTime + u.phase);
+    const rig = p.userData.rig;
+    rig.legL.rotation.x = stride*0.55;
+    rig.legR.rotation.x = -stride*0.55;
+    rig.armL.rotation.x = -stride*0.4;
+    rig.armR.rotation.x = stride*0.4;
+    p.position.y = Math.abs(stride)*0.012*Math.max(0.15,mul);
+  }
+
+  // sitting cats — idle tail sway, occasional ear twitch, no locomotion
+  for(const c of sittingCats){
+    const rig = c.userData.rig;
+    rig.tail.rotation.y = Math.sin(t*1.1 + c.userData.phase) * 0.35;
+  }
+
+  // roaming cats — wander freely between random sidewalk points (unlike
+  // cars/pedestrians they aren't locked to one axis), pausing occasionally
+  for(const c of roamingCats){
+    const u = c.userData;
+    const rig = c.userData.rig;
+    if(u.pauseTimer > 0){
+      u.pauseTimer -= dt;
+      rig.tail.rotation.y = Math.sin(t*1.4 + (u.gaitPhase||0)) * 0.3;
+    } else {
+      const dx = u.target.x - c.position.x, dz = u.target.z - c.position.z;
+      const dist = Math.hypot(dx, dz);
+      if(dist < 0.25){
+        u.target = randomCatPoint();
+        u.pauseTimer = 0.6 + Math.random()*3;
+      } else {
+        const nx = dx/dist, nz = dz/dist;
+        c.position.x += nx * u.speed * dt;
+        c.position.z += nz * u.speed * dt;
+        resolveCatCollisions(c);
+        c.rotation.y = Math.atan2(nx, nz);
+        u.gaitPhase += dt * 9;
+        const stride = Math.sin(u.gaitPhase);
+        rig.legs[0].rotation.x = stride*0.5;   // front-left
+        rig.legs[1].rotation.x = -stride*0.5;  // front-right
+        rig.legs[2].rotation.x = -stride*0.5;  // back-left
+        rig.legs[3].rotation.x = stride*0.5;   // back-right
+        c.position.y = Math.abs(stride)*0.006;
+        rig.tail.rotation.y = Math.sin(t*2.4 + u.gaitPhase*0.3) * 0.2;
+      }
+    }
+  }
+
+  // sky traffic — plane & ship crossing overhead on independent cooldowns
+  for(const craft of skyCraft){
+    if(craft.flying){
+      craft.elapsed += dt;
+      const p = Math.min(craft.elapsed / craft.duration, 1);
+      craft.mesh.position.lerpVectors(craft.start, craft.end, p);
+
+      if(craft.kind === 'plane'){
+        craft.mesh.userData.beacon.material.opacity = 0.2 + 0.8*Math.max(0, Math.sin(t*6));
+      } else {
+        craft.mesh.position.y += Math.sin(craft.elapsed*1.8)*0.3;
+        const ring = craft.mesh.userData.ring;
+        ring.rotation.z += dt*1.4;
+        const pulse = 0.85 + Math.sin(t*2.2)*0.15;
+        ring.scale.set(pulse,pulse,1);
+        craft.mesh.userData.glow.material.opacity = 0.35 + Math.sin(t*2.2)*0.15;
+      }
+
+      if(p >= 1){
+        craft.flying = false;
+        craft.mesh.visible = false;
+        craft.timer = craft.minWait + Math.random()*(craft.maxWait - craft.minWait);
+      }
+    } else {
+      craft.timer -= dt;
+      if(craft.timer <= 0) launchCraft(craft);
+    }
+  }
+
+  // beacon + sign pulse
+  for(const s of placeholderGroup.children){
+    if(s.userData && s.userData.phase !== undefined && s.userData.baseY !== undefined){
+      s.position.y = s.userData.baseY + Math.sin(t*1.3 + s.userData.phase)*0.15;
+    }
+    if(s.userData && s.userData.phase !== undefined && s.geometry && s.geometry.type==='RingGeometry'){
+      const sc = 1 + Math.sin(t*1.6 + s.userData.phase)*0.12;
+      s.scale.set(sc,sc,1);
+    }
+  }
+
+  // HUD coordinates
+  cxEl.textContent = rig.position.x.toFixed(1).padStart(6,'0');
+  czEl.textContent = rig.position.z.toFixed(1).padStart(6,'0');
+
+  renderer.render(scene, camera);
+}
+animate();
+
+/* =========================================================================
+   RESIZE
+   ========================================================================= */
+window.addEventListener('resize', ()=>{
+  aspect = window.innerWidth/window.innerHeight;
+  isoCamera.left = -FRUSTUM*aspect/2; isoCamera.right = FRUSTUM*aspect/2;
+  isoCamera.top = FRUSTUM/2; isoCamera.bottom = -FRUSTUM/2;
+  isoCamera.updateProjectionMatrix();
+  povCamera.aspect = aspect;
+  povCamera.updateProjectionMatrix();
+  applyRendererSize();
+});
+
+})();
+</script>
+</body>
+</html>
